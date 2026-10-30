@@ -9,6 +9,10 @@
 
 #include "../core/ble_link.h"
 
+#define SEAFLO_SERVICE_UUID "0000fff0-0000-1000-8000-00805f9b34fb"
+#define SEAFLO_NOTIFY_UUID  "0000fff1-0000-1000-8000-00805f9b34fb" // Oft FFF1 bei Seaflo
+#define SEAFLO_WRITE_UUID   "0000fff2-0000-1000-8000-00805f9b34fb" // Oft FFF2 bei Seaflo
+
 struct PumpCfg {
     char mac[18];
     char model[24];        // Model label for Home Assistant only (empty = "Pumpe")
@@ -60,14 +64,14 @@ public:
     uint8_t bleUse() const override { return BLE_LINK; }
     const char* bleAddress() const override { return c.mac; }
     bool bleCandidate(int32_t company, const char* uuid, const char* name) const override {
-        return strstr(uuid, "ff00") != nullptr;
+        return strstr(uuid, "ff00") != nullptr || strstr(uuid, "fff0") != nullptr;
     }
     const char* manufacturer() const override { return "CaraWater"; }
     const char* model() const override { return c.model[0] ? c.model : "Pumpe"; }
 
     void begin() override {
-        link.begin(id, PUMP_SERVICE_UUID, PUMP_NOTIFY_UUID, PUMP_WRITE_UUID);
-        link.setSilenceTimeout(PUMP_OFFLINE_MS * 3);   // Connected but silent: reconnect
+        link.begin(id, SEAFLO_SERVICE_UUID, SEAFLO_NOTIFY_UUID, SEAFLO_WRITE_UUID);
+        link.setSilenceTimeout(PUMP_OFFLINE_MS * 4);   // Connected but silent: reconnect
         begun = true;
         link.setTarget(c.mac);
     }
@@ -76,6 +80,14 @@ public:
         link.loop();
         BlePacket pkt;
         while (link.receive(pkt)) parseFrame(pkt.data, pkt.len);
+
+        // Handshake: Einmalig nach dem Verbinden den Status abfragen
+        bool currentConnected = link.connected();
+        if (currentConnected && !wasConnected && !hasData) {
+            Serial.printf("[%s] Frisch verbunden. Sende Initial-Request...\n", id);
+            writeStatus(statusRaw);
+        }
+        wasConnected = currentConnected;
 
         bool avail = available();
         if (avail != lastAvailable || link.changes != lastLinkChanges) {
@@ -86,7 +98,7 @@ public:
     }
 
     bool available() override {
-        return link.connected() && hasData && millis() - lastFrame <= PUMP_OFFLINE_MS;
+        return link.connected() && hasData && millis() - lastFrame <= (PUMP_OFFLINE_MS * 2);
     }
 
     void live(JsonObject o) override {
@@ -164,8 +176,8 @@ public:
         } else {
             return;
         }
-        if (!link.connected() || !hasData) {
-            Serial.printf("[%s] Command ignored - pump not connected or status unknown\n", id);
+        if (!link.connected()) {
+            Serial.printf("[%s] Command ignored - pump not connected\n", id);
             updates++;   // Re-publish the real state so HA switches snap back
             return;
         }
@@ -176,6 +188,7 @@ public:
 private:
     PumpCfg c;
     BleLink link;
+    bool wasConnected = false;
     bool begun = false;
     char lastMac[18] = "";
 
