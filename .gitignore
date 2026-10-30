@@ -1,0 +1,20 @@
+# Build output
+build/
+.pio/
+.vscode/
+
+# macOS
+.DS_Store
+
+# Patch files dropped into the repo for applying
+*.patch
+
+# Personal settings of each device (see config_local.h.example)
+config_local.h
+
+
+
+# Python caches
+__pycache__/
+*.pyc
+
