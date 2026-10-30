@@ -1,3 +1,7 @@
+> [!WARNING]
+> **IN ENTWICKLUNG – kein fertiges Projekt.** Wegen teils mangelnder Hardware nicht selber getestet.
+
+
 # Camper Tool
 
 Eine benutzerfreundliche, performante Steuerung und Überwachung für Campervans und Wohnmobile auf Basis von ESP32-Mikrocontrollern. Das **Camper Tool** erfasst wichtige Sensordaten (z. B. Tankstände, Gassensoren, Temperaturen, Batteriewerte) und stellt diese über ein modernes Web-Interface sowie MQTT / Home Assistant zur Verfügung.
