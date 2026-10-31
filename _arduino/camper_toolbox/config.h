@@ -65,16 +65,16 @@
 #define FW_VERSION            "0.1.0"
 
 #ifndef DEVICE_NAME
-#define DEVICE_NAME           "Camper Tool"      // Name in Home Assistant and in the web UI
+#define DEVICE_NAME           "Camper Toolbox"      // Name in Home Assistant and in the web UI
 #endif
 #ifndef DEFAULT_AP_SSID
-#define DEFAULT_AP_SSID       "Camper-Tool"      // Base name; "-XXXXXX" (last 3 MAC bytes) is appended
+#define DEFAULT_AP_SSID       "Camper-Toolbox"      // Base name; "-XXXXXX" (last 3 MAC bytes) is appended
 #endif
 #ifndef DEFAULT_AP_PASSWORD
-#define DEFAULT_AP_PASSWORD   "campertool1234"   // Test placeholder (min. 8 characters) - change in the web UI
+#define DEFAULT_AP_PASSWORD   "campertoolbox1234"   // Test placeholder (min. 8 characters) - change in the web UI
 #endif
 #ifndef DEFAULT_OTA_PASSWORD
-#define DEFAULT_OTA_PASSWORD  "campertool1234"   // Test placeholder - change before the first flash
+#define DEFAULT_OTA_PASSWORD  "campertoolbox1234"   // Test placeholder - change before the first flash
 #endif
 #ifndef DEFAULT_MQTT_SERVER
 #define DEFAULT_MQTT_SERVER   ""                 // Set in the web UI
