@@ -9,6 +9,12 @@
 // Every advertisement is handed to the enabled plugins (Plugin::onAdvertisement) and
 // remembered in a "nearby" list for picking device addresses in the web UI.
 
+// Default BLE security (bonding, no forced MITM, secure connections). BleLink switches
+// MITM on only while pairing with a PIN and restores these values afterwards.
+#define BLE_SEC_BOND true
+#define BLE_SEC_MITM false
+#define BLE_SEC_SC   true
+
 void bleInit();            // Only called when an enabled plugin uses BLE
 void bleLoop();
 bool bleActive();

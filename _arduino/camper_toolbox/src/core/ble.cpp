@@ -146,8 +146,12 @@ void bleInit() {
 
     NimBLEDevice::init("");
     NimBLEDevice::setMTU(247);                          // Larger frames for connecting plugins
-    NimBLEDevice::setSecurityIOCap(BLE_HS_IO_KEYBOARD_ONLY);   // PIN entry (RV Tech)
-    NimBLEDevice::setSecurityAuth(true, false, true);   // Bonding, secure connections
+    NimBLEDevice::setSecurityIOCap(BLE_HS_IO_KEYBOARD_ONLY);   // PIN entry (roof hatch, fridge)
+    // Bonding + secure connections, set once here for all links (never changed later).
+    // MITM is not forced: a device that wants a PIN requests MITM itself and the
+    // keyboard IO capability then leads to passkey entry; devices without a PIN
+    // (pump) keep pairing "just works". Legacy pairing falls back automatically.
+    NimBLEDevice::setSecurityAuth(BLE_SEC_BOND, BLE_SEC_MITM, BLE_SEC_SC);
 
     scan = NimBLEDevice::getScan();
     scan->setScanCallbacks(&scanCallbacks, true);  // true = report every advertisement

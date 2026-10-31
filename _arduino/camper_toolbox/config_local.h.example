@@ -29,6 +29,10 @@
 // #define DEFAULT_WEB_USER      "admin"
 // #define DEFAULT_WEB_PASSWORD  "web-password"
 
+// ---- Bluetooth devices -----------------------------------------------
+// MAC addresses and PINs of the pump, roof hatch and fridge are NOT set here.
+// Enter them in the web UI (plugin settings, "Suchen" picks the MAC).
+
 // ---- Device ----------------------------------------------------------
 // #define DEVICE_NAME          "Camper Tool"
 // #define DEFAULT_MQTT_PREFIX  "camper/tool"

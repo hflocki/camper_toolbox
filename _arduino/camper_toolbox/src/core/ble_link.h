@@ -24,6 +24,11 @@
 // ============================================================
 
 #define BLE_PACKET_MAX 128
+#define BLE_NO_PIN     (-1)
+
+// Parses a PIN from the web UI: 1-6 digits. Returns BLE_NO_PIN for an empty or invalid
+// string. "000000" is a valid PIN (value 0) and must not be mistaken for "no PIN".
+int32_t blePinParse(const char* s);
 
 struct BlePacket {
     uint16_t len;
@@ -37,8 +42,9 @@ public:
     void begin(const char* tag, const char* service, const char* notifyUuid, const char* writeUuid);
     void setUuids(const char* service, const char* notifyUuid, const char* writeUuid);
 
-    // Device address ("" = none) and optional PIN (0 = no pairing). Reconnects when changed.
-    void setTarget(const char* mac, uint32_t pin = 0);
+    // Device address ("" = none) and optional PIN (BLE_NO_PIN = no pairing, 0 = PIN "000000").
+    // Reconnects when changed; a changed PIN also deletes the old bond.
+    void setTarget(const char* mac, int32_t pin = BLE_NO_PIN);
 
     // Connected but nothing received for that long: drop the link and reconnect (0 = never)
     void setSilenceTimeout(uint32_t ms) { silenceMs = ms; }
@@ -80,7 +86,7 @@ private:
     char notifyUuid[40] = "";
     char writeUuid[40] = "";
     char mac[18] = "";
-    uint32_t pin = 0;
+    int32_t pin = BLE_NO_PIN;
     uint32_t silenceMs = 0;
 
     NimBLEClient* client = nullptr;
@@ -94,6 +100,7 @@ private:
     bool isReleased = false;
     uint8_t tryType = 0;              // Address type to try if the scan has not seen the device
     uint8_t subscribed = 0;
+    uint8_t subscribeFailed = 0;     // Subscriptions refused in the last attempt
     unsigned long connectStarted = 0;
     unsigned long lastAttempt = 0;
     unsigned long retryDelay = 0;
@@ -110,6 +117,7 @@ private:
     void connectFailed();
     void markDisconnected();
     bool subscribeChr(NimBLERemoteCharacteristic* c);
+    void forgetBond();
     void push(const uint8_t* d, size_t n);
 };
 

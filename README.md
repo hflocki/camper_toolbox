@@ -3,105 +3,71 @@
 
 # Camper Toolbox
 
-Eine benutzerfreundliche, performante Steuerung und Überwachung für Campervans und Wohnmobile auf Basis von ESP32-Mikrocontrollern. Das **Camper Toolbox** erfasst wichtige Sensordaten (z. B. Tankstände, Gassensoren, Temperaturen, Batteriewerte) und stellt diese über ein modernes Web-Interface sowie MQTT / Home Assistant zur Verfügung.
+Ein ESP32 als zentrales **Bluetooth-Gateway** für Campervans und Wohnmobile. Die Camper Toolbox liest Bluetooth-Geräte aus bzw. steuert sie und stellt alles über ein Web-Interface sowie MQTT / Home Assistant (Auto-Discovery) zur Verfügung. Es wird keine zusätzliche Hardware verdrahtet – nur ein ESP32.
 
 ## 🛠️ Funktionen
 
-- **Wasser- & Tankpegelüberwachung:**
-  - Frisch- und Grauwassermessung über ADC (z. B. Votronic Tankelektroden oder kapazitive Votronic FL-Sensoren).
+Die Gerätetreiber sind Plugins. Welche davon in die Firmware kommen, legst du in `config.h` bzw. `config_local.h` fest (Zahl = Anzahl der Geräte, `0` = nicht einkompiliert):
 
-  - Automatische Pegel-Interpolation über anpassbare Kalibrierungs-Matrizen.
+| Plugin-Schalter     | Gerät                                     | Bluetooth                | Einstellungen in der Web-UI          |
+| ------------------- | ----------------------------------------- | ------------------------ | ------------------------------------ |
+| `PLUGIN_DIMES`      | Gas: Rotarex DIMES / SRG WAVE             | passiv (nur mithören)    | MAC, Flaschengröße, Füllstopp        |
+| `PLUGIN_MOPEKA_PRO` | Gas: Mopeka Pro (Pro Check, Universal …)  | passiv                   | MAC, Leer-/Voll-Höhe                 |
+| `PLUGIN_MOPEKA_STD` | Gas: Mopeka Standard / Std Check          | passiv                   | MAC, Leer-/Voll-Höhe, Propan-Anteil  |
+| `PLUGIN_CARAWATER`  | Wasserpumpe CaraWater (ISP 15)            | Verbindung               | MAC                                  |
+| `PLUGIN_RVTECH`     | Dachhaube RV Tech (Heki-Motorsteuerung)   | Verbindung, ggf. mit PIN | MAC, PIN                             |
+| `PLUGIN_WCS_FRIDGE` | WCS Kompressor-Kühlschrank                | Verbindung, ggf. mit PIN | MAC, PIN, optional UUIDs / Abfrage   |
 
-- **Gas-Füllstandsmessung:**
-  - BLE-Scanning und Auswertung von Bluetooth-Gassensoren (z. B. Mopeka / Gasbank).
+- Passive Sensoren: beliebig viele. Geräte mit Verbindung: höchstens **3** pro ESP32.
+- Web-Interface mit Live-Werten, Geräte-Suche („Suchen“) und Rohdaten-Ansicht.
+- WLAN-Manager mit Access-Point-Fallback, MQTT mit **Home Assistant Auto-Discovery**, OTA-Updates.
 
-  - Konfigurierbarer Füllstopp.
+## 📶 Bluetooth-Geräte einrichten
 
-- **Sensoren & Aktorsteuerung:**
-  - Messung von Temperaturen/Luftfeuchtigkeit (z. B. DS18B20, DHT11/22) und Spannungsmessung (Starter- & Aufbaubatterie).
+**MAC-Adresse und PIN werden in der Web-UI eingetragen**, im Einstellungsbereich des jeweiligen Plugins – **nicht** in `config_local.h`. Ein `#define RVTECH_PIN …` o. Ä. hat keine Wirkung.
 
-  - Schalten von Verbrauchern (z. B. Wasserpumpe, Standheizung, Beleuchtung) über Relais oder MOSFETs.
+1. Plugin in `config_local.h` aktivieren (z. B. `#define PLUGIN_RVTECH 1`) und flashen.
+2. Web-UI öffnen → Plugin → **„Suchen“** → Gerät aus der Liste wählen (übernimmt die MAC).
+3. Falls das Gerät eine **PIN** hat (z. B. Dachhaube, Kühlschrank): PIN eintragen (1–6 Ziffern, auch `000000`). Die PIN ist dieselbe wie in der Hersteller-App.
+4. **Handy-App trennen** (App schließen oder Bluetooth am Handy aus). Die Geräte erlauben nur eine Verbindung gleichzeitig. Später kann das Handy über den Schalter **„Bluetooth für App freigeben“** wieder ran.
 
-- **Konnektivität & Integration:**
-  - Web-Interface (responsive HTML/JS UI, komprimiert per LittleFS).
+Der **Status** in der Web-UI zeigt, wo es hakt:
 
-  - WLAN-Manager mit automatischem Access-Point-Fallback.
+| Status                    | Bedeutung / was tun                                                                                                  |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `Nicht erreichbar`        | Gerät nicht in Reichweite oder noch mit dem Handy verbunden.                                                         |
+| `Kopplung fehlgeschlagen` | PIN falsch – oder das Gerät ist noch an ein Handy gekoppelt. PIN prüfen; ggf. die Kopplung im Gerät/App zurücksetzen. |
+| `PIN nötig?`              | Das Gerät verlangt eine Kopplung, aber es ist keine (oder eine falsche) PIN eingetragen.                             |
+| `Falsches Gerät?`         | Die erwarteten Bluetooth-Dienste wurden nicht gefunden – andere MAC gewählt?                                         |
+| `Warte auf Daten`         | Verbunden, aber noch keine Werte. Kühlschrank: „Letzte Nachricht“ und „Abonniert“ ansehen, ggf. Abfragebefehl setzen. |
+| `Verbunden`               | Alles in Ordnung.                                                                                                    |
 
-  - MQTT-Anbindung inklusive **Home Assistant Auto-Discovery**.
-
-  - Unterstützung für OTA-Updates (Over-The-Air).
+Mehr Details stehen im Serial Monitor (115200 Baud), z. B. `[rvtech] Pairing failed …` oder `Subscribe … FAILED`.
 
 ## 📂 Projektstruktur
 
 ```
 camper_toolbox/
-├── _arduino/
-│   └── camper_toolbox/
-│       ├── camper_toolbox.ino        # Hauptskript / Haupteinstiegspunkt
-│       ├── config.h               # Einstellungen, Pins, Schwellenwerte, Gas-Byte-Zuordnung
-│       ├── config_local.h.example # Vorlage für private Zugangsdaten (WLAN/MQTT)
-│       ├── webserver.cpp / .h     # Web-UI (gzip), REST-API, LittleFS-Handling
-│       ├── water_sensor.cpp / .h  # ADC für Frisch-/Grauwasser, Mittelwert, Matrix-Interpolation
-│       ├── gas_sensor.cpp / .h    # NimBLE-Scan, Dekodierung, Füllstopp
-│       ├── mqtt_ha.cpp / .h       # MQTT-Client & Home Assistant Discovery
-│       ├── wifi_manager.cpp / .h  # WLAN-Verwaltung & AP-Fallback (WiFi/BLE Coex)
-│       ├── web/
-│       │   └── index.html         # Quelle der Web-Oberfläche (Unkomprimiert)
-│       └── data/
-│           └── index.html.gz      # Komprimierte Web-UI für LittleFS
-└── _platformio/                   # PlatformIO-Umgebung (platformio.ini & Build-Skripte)
-
+├── _arduino/camper_toolbox/
+│   ├── camper_toolbox.ino         # Einstiegspunkt
+│   ├── config.h                   # Plugin-Auswahl, Standardwerte, BLE-Parameter
+│   ├── config_local.h.example     # Vorlage für eigene Einstellungen (nicht in Git)
+│   ├── src/core/                  # WLAN, MQTT/HA, Webserver, Einstellungen, BLE-Scan, BLE-Verbindung
+│   ├── src/plugins/               # Gerätetreiber (DIMES, Mopeka, CaraWater, RV Tech, WCS)
+│   ├── web/index.html             # Quelle der Web-Oberfläche
+│   └── data/index.html.gz         # Komprimierte Web-UI für LittleFS
+└── doc/                           # Screenshots
 ```
 
-### Wichtigste Dateien im Überblick
+## 🚀 Hardware
 
-| Datei              | Inhalt & Funktion                                                                                |
-| ------------------ | ------------------------------------------------------------------------------------------------ |
-| `config.h`         | Hardware-Pinbelegungen, Standardwerte, Sensor-Schwellenwerte & Gas-Byte-Zuordnungen              |
-| `water_sensor.cpp` | Messung & Aufbereitung der ADC-Werte für Frisch- und Grauwasser (Gleitender Mittelwert & Matrix) |
-| `gas_sensor.cpp`   | NimBLE-Scan Routinen, Dekodierung von Bluetooth-Gassensoren, Gerätelisten                        |
-| `mqtt_ha.cpp`      | MQTT-Verbindung, Telemetrie-Publishing und Home Assistant Auto-Discovery                         |
-| `webserver.cpp`    | Async-Webserver, Auslieferung der gzipped Web-UI, REST-API Endpunkte                             |
-| `wifi_manager.cpp` | WLAN-Verbindungsaufbau, AP-Fallback und Modem-Sleep für stabile WiFi/BLE-Koexistenz              |
-
-## 🚀 Hardware & Pinbelegung
-
-Das System unterstützt den **ESP32-C3 Super Mini** (Standard), den **ESP32-S3** oder den **klassischen ESP32**. Die Pinbelegung wird je nach gewähltem Chip-Typ automatisch zugewiesen.
-
-### Standard-Pinbelegung
-
-| Sensor / Funktion               | ESP32-C3         | ESP32-S3         | Klassischer ESP32 | Parameter in `config.h`   |
-| ------------------------------- | ---------------- | ---------------- | ----------------- | ------------------------- |
-| **Frischwasser** (Votronic)     | GPIO0            | GPIO1            | GPIO34            | `ADC_PIN`                 |
-| **Grauwasser** (Votronic, opt.) | GPIO1            | GPIO2            | GPIO35            | `GREY_ADC_PIN`            |
-| **Gas** (BLE)                   | _Bluetooth_      | _Bluetooth_      | _Bluetooth_       | Eingebautes Bluetooth     |
-| **Relais / Aktoren**            | Pin frei wählbar | Pin frei wählbar | Pin frei wählbar  | In `config.h` definierbar |
-
-#### Wichtige Hardware-Hinweise:
-
-- **ADC1-Einschränkung:** Beide Analogeingänge für die Tanks müssen zwingend an **ADC1-Pins** angebunden sein. ADC2 kann nicht genutzt werden, solange das WLAN-Modul aktiv ist.
-
-- **Boot-Pins beachten:**
-  - GPIO2 beim ESP32-C3 **nicht** belegen (Strapping-/Boot-Pin).
-
-  - Beim ESP32-S3 ist GPIO0 ein Boot-Pin ohne ADC-Funktion, weshalb dort GPIO1/GPIO2 genutzt werden.
-
-- **Leitungsfilter & Schutz:** Vor dem Anschluss die Signalspannung der Tankgeber messen (darf max. \~2,5 V - 3,3 V betragen, sonst Spannungsteiler nutzen). Bei langen Leitungen empfiehlt sich ein abgeschirmtes Kabel.
-
-### Grauwasser-Gebertypen
-
-Im Web-Interface (Tab _Grau_ unter „Gebertyp“) konfigurierbar (Werkseinstellung in `config.h`: `GREY_SENSOR_TYPE`):
-
-| Gebertyp                    | Kalibrierung       | Eigenschaften                                                                                   |
-| --------------------------- | ------------------ | ----------------------------------------------------------------------------------------------- |
-| **Votronic Tankelektrode**  | Multi-Punkt Matrix | Analoge Signalverarbeitung wie beim Frischwassertank.                                           |
-| **Votronic Tank-Sensor FL** | Kapazitiv / Linear | Robust gegen Ablagerungen im Abwasser. Kalibrierung über „Leer übernehmen“ / „Voll übernehmen“. |
+Unterstützt werden **ESP32-C3** (z. B. Super Mini), **ESP32-S3** und der **klassische ESP32**. Es wird nichts angeschlossen – alle Geräte laufen über das eingebaute Bluetooth. Stromversorgung per USB oder 5-V-Wandler.
 
 ## 💻 Software & Entwicklungsumgebung
 
 ### Software-Voraussetzungen
 
-- [Arduino IDE](https://www.arduino.cc/en/software) (Version 2.2.1 oder neuer empfohlen) oder [PlatformIO](https://platformio.org/)
+- [Arduino IDE](https://www.arduino.cc/en/software) (Version 2.2.1 oder neuer empfohlen)
 
 - **Board-Paket:** `esp32` von Espressif (Version 3.x, getestet mit `3.3.9`)
 
@@ -114,8 +80,6 @@ Im Web-Interface (Tab _Grau_ unter „Gebertyp“) konfigurierbar (Werkseinstell
 | **ESP Async WebServer**            | ESP32Async      | `3.12.1`          |
 | **Async TCP**                      | ESP32Async      | `3.5.0`           |
 | **NimBLE-Arduino**                 | h2zero          | `2.5.1`           |
-| **OneWire** _(optional)_           | Paul Stoffregen | Standard          |
-| **DallasTemperature** _(optional)_ | Miles Burton    | Standard          |
 
 ## ⚙️ Vorbereitung der Arduino IDE
 
@@ -167,7 +131,7 @@ mv ~/Downloads/arduino-littlefs-upload-*.vsix ~/.arduinoIDE/plugins/
 1. **Repository klonen:**
 
    ```
-   git clone https://github.com/hflocki/camper_box.git
+   git clone https://github.com/hflocki/camper_toolbox.git
 
    ```
 
@@ -195,8 +159,6 @@ mv ~/Downloads/arduino-littlefs-upload-*.vsix ~/.arduinoIDE/plugins/
 > gzip -9 -n -c web/index.html > data/index.html.gz
 >
 > ```
->
-> _(Bei Nutzung von PlatformIO wird dieser Schritt über `_platformio/gzip_web.py` automatisch ausgeführt)._
 
 ## 🧪 Nutzung & Wartung
 
@@ -204,7 +166,7 @@ mv ~/Downloads/arduino-littlefs-upload-*.vsix ~/.arduinoIDE/plugins/
 
 - **Home Assistant:** Sofern MQTT aktiviert ist, erstellt das Tool via Auto-Discovery automatisch alle Sensoren, Switche und Messwerte in Home Assistant.
 
-- **OTA-Updates:** Nach dem ersten Flashen per USB können zukünftige Updates bequem über WLAN eingespielt werden (`camper-toolbox` erscheint als Netzwerkkort in der Arduino IDE).
+- **OTA-Updates:** Nach dem ersten Flashen per USB können zukünftige Updates bequem über WLAN eingespielt werden (`camper-tool` erscheint als Netzwerkport in der Arduino IDE, siehe `OTA_HOSTNAME`).
 
 ## 🤝 Beitragen
 
@@ -222,4 +184,4 @@ Beiträge, Ideen und Verbesserungsvorschläge sind herzlich willkommen!
 
 ## 📄 Lizenz
 
-Dieses Projekt steht unter der [MIT License](LICENSE).
+Dieses Projekt steht unter der MIT License.

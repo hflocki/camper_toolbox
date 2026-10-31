@@ -285,6 +285,10 @@
 #define PUMP_SERVICE_UUID     "0000ff00-0000-1000-8000-00805f9b34fb"
 #define PUMP_NOTIFY_UUID      "0000ff01-0000-1000-8000-00805f9b34fb"
 #define PUMP_WRITE_UUID       "0000ff02-0000-1000-8000-00805f9b34fb"
+// Alternative layout (other Seaflo based pumps), tried if the one above is not found
+#define PUMP_ALT_SERVICE_UUID "0000fff0-0000-1000-8000-00805f9b34fb"
+#define PUMP_ALT_NOTIFY_UUID  "0000fff1-0000-1000-8000-00805f9b34fb"
+#define PUMP_ALT_WRITE_UUID   "0000fff2-0000-1000-8000-00805f9b34fb"
 #ifndef PUMP_OFFLINE_MS
 #define PUMP_OFFLINE_MS       10000  // No status frame for 10 s = pump offline
 #endif
@@ -298,6 +302,7 @@
 // ASCII telegrams over a BLE UART bridge (characteristic FFE1):
 //   send "P_d=NNN\r\n" (target position), receive "P_a=NNN\r\n" (reported position)
 // Positions 0-100, presets: open 100, closed 0, rain 12, vent 102.
+// MAC address and PIN are set in the web UI (not in config_local.h).
 // Ported from the Home Assistant integration rvtech-hacs.
 // ============================================================
 #define RVTECH_SERVICE_UUID   "0000ffe0-0000-1000-8000-00805f9b34fb"
@@ -318,8 +323,8 @@
 // The fridge sends ASCII status messages "/SC0/t0,t1,t2,<temp zone 1>,<temp zone 2>,
 // <set zone 1>,<set zone 2>,t7,<voltage x10>,t9,<battery %>,...".
 // The GATT UUIDs are not documented: by default the plugin subscribes to every
-// characteristic that can notify. Fixed UUIDs and an optional poll command can be
-// set in the web UI.
+// characteristic that can notify. Fixed UUIDs, the Bluetooth PIN and an optional
+// poll command are set in the web UI (not in config_local.h).
 // ============================================================
 #ifndef WCS_OFFLINE_MS
 #define WCS_OFFLINE_MS        120000 // No status message for 2 min = fridge offline

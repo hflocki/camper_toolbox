@@ -18,6 +18,7 @@
 
 struct WcsCfg {
     char mac[18];
+    char pin[8];           // Bluetooth PIN (digits), empty = no pairing
     bool zone2;            // Fridge has a second zone (freezer)
     char service[40];      // GATT service UUID, empty = all services
     char notify[40];       // Notify characteristic, empty = every one that can notify
@@ -28,6 +29,8 @@ struct WcsCfg {
 
 static const Field WCS_FIELDS[] = {
     FLD_MAC(WcsCfg, mac, "mac", "Kühlschrank-MAC", "Über \"Suchen\" aus der Liste wählen"),
+    FLD_TEXT(WcsCfg, pin, "pin", "Bluetooth-PIN", "Nur Ziffern (1-6, auch 000000), wie in der Kühlschrank-App. "
+                                             "Leer lassen, wenn keine nötig ist. Handy-App dabei trennen."),
     FLD_BOOL(WcsCfg, zone2, "zone2", "Zweite Zone", "Kühlschrank mit zweitem Fach / Gefrierfach"),
     FLD_TEXT(WcsCfg, service, "service", "Service-UUID", "Leer = alle Services (Standard)"),
     FLD_TEXT(WcsCfg, notify, "notify", "Notify-UUID", "Leer = jede Characteristic, die senden kann (Standard)"),
@@ -71,9 +74,10 @@ public:
             updates++;
         }
         unescape(c.poll, pollCmd, sizeof(pollCmd));
+        pinValue = blePinParse(c.pin);
         if (begun) {
             link.setUuids(c.service, c.notify, c.write);
-            link.setTarget(c.mac);
+            link.setTarget(c.mac, pinValue);
         }
     }
 
@@ -88,7 +92,7 @@ public:
         link.begin(id, c.service, c.notify, c.write);
         link.setSilenceTimeout(WCS_OFFLINE_MS);   // Connected but silent: reconnect
         begun = true;
-        link.setTarget(c.mac);
+        link.setTarget(c.mac, pinValue);
     }
 
     void loop() override {
@@ -185,6 +189,7 @@ private:
     bool begun = false;
     char lastMac[18] = "";
     char pollCmd[24] = "";
+    int32_t pinValue = BLE_NO_PIN;
     uint32_t lastLinkChanges = 0;
     unsigned long lastPoll = 0;
     bool lastAvailable = false;

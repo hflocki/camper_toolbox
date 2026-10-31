@@ -25,14 +25,34 @@ void BleLink::setUuids(const char* svc, const char* notify, const char* wr) {
     }
 }
 
-void BleLink::setTarget(const char* mac_, uint32_t pin_) {
-    if (strcmp(mac, mac_) == 0 && pin == pin_) return;
+int32_t blePinParse(const char* s) {
+    if (!s) return BLE_NO_PIN;
+    size_t n = strlen(s);
+    if (n == 0 || n > 6) return BLE_NO_PIN;
+    for (size_t i = 0; i < n; i++) if (!isdigit((unsigned char)s[i])) return BLE_NO_PIN;
+    return (int32_t)atol(s);   // "000000" -> 0, a valid passkey
+}
+
+void BleLink::setTarget(const char* mac_, int32_t pin_) {
+    bool sameMac = strcmp(mac, mac_) == 0;
+    if (sameMac && pin == pin_) return;
     disconnect();
+    // Same device, new PIN: an old bond (maybe made with a wrong PIN) would block pairing
+    if (sameMac && mac[0]) forgetBond();
     strlcpy(mac, mac_, sizeof(mac));
     pin = pin_;
     retryDelay = 0;
     lastAttempt = 0;
-    Serial.printf("[%s] Device: %s%s\n", tag, mac[0] ? mac : "(not set)", pin ? " (PIN)" : "");
+    Serial.printf("[%s] Device: %s%s\n", tag, mac[0] ? mac : "(not set)", pin != BLE_NO_PIN ? " (PIN)" : "");
+}
+
+// Deletes a stored bond for the current device (both address types, the bond store
+// does not tell which one was used)
+void BleLink::forgetBond() {
+    if (!mac[0]) return;
+    bool a = NimBLEDevice::deleteBond(NimBLEAddress(std::string(mac), BLE_ADDR_PUBLIC));
+    bool b = NimBLEDevice::deleteBond(NimBLEAddress(std::string(mac), BLE_ADDR_RANDOM));
+    if (a || b) Serial.printf("[%s] Old bond deleted\n", tag);
 }
 
 void BleLink::setState(const char* s) {
@@ -59,7 +79,13 @@ void BleLink::onDisconnect(NimBLEClient* c, int reason) {
 }
 
 void BleLink::onPassKeyEntry(NimBLEConnInfo& info) {
-    NimBLEDevice::injectPassKey(info, pin);
+    if (pin == BLE_NO_PIN) {
+        // The device asks for a PIN although none is configured
+        Serial.printf("[%s] Device requests a PIN - enter it in the web UI\n", tag);
+        NimBLEDevice::injectPassKey(info, 0);
+        return;
+    }
+    NimBLEDevice::injectPassKey(info, (uint32_t)pin);
 }
 
 void BleLink::onConfirmPasskey(NimBLEConnInfo& info, uint32_t p) {
@@ -137,32 +163,60 @@ bool BleLink::subscribeChr(NimBLERemoteCharacteristic* c) {
     if (ok) {
         subscribed++;
         Serial.printf("[%s] Subscribed %s\n", tag, c->getUUID().toString().c_str());
+    } else {
+        // Typical cause: the characteristic needs an encrypted link (PIN / pairing)
+        subscribeFailed++;
+        Serial.printf("[%s] Subscribe %s FAILED (PIN / pairing needed?)\n", tag, c->getUUID().toString().c_str());
     }
     return ok;
 }
 
+// Standard services that never carry device data. Skipped when subscribing to
+// "every notifying characteristic", otherwise e.g. Service Changed (0x2A05) counts
+// as a subscription and a failed data subscription goes unnoticed.
+static bool isStandardService(const NimBLEUUID& u) {
+    static const uint16_t STD[] = {0x1800, 0x1801, 0x180A, 0x180F};
+    for (uint16_t s : STD) if (u == NimBLEUUID(s)) return true;
+    return false;
+}
+
 // Called once the link is up: pairing, service discovery and subscription (typically < 1 s)
 bool BleLink::finishConnect() {
-    if (pin) {
-        NimBLEDevice::setSecurityAuth(true, true, false);  // Bonding + MITM (passkey pairing)
-        if (!client->secureConnection(false)) {
-            Serial.printf("[%s] Pairing failed - wrong PIN?\n", tag);
+    // MITM (passkey) only for the duration of this pairing, then back to the defaults
+    // from bleInit(). Before, secure connections stayed switched off for every link.
+    if (pin != BLE_NO_PIN) {
+        NimBLEDevice::setSecurityAuth(true, true, true);
+        bool ok = client->secureConnection(false);
+        NimBLEDevice::setSecurityAuth(BLE_SEC_BOND, BLE_SEC_MITM, BLE_SEC_SC);
+        if (!ok) {
+            Serial.printf("[%s] Pairing failed - wrong PIN, or the device is still bonded to a phone?\n", tag);
             setState("Kopplung fehlgeschlagen");
             disconnect();
+            forgetBond();   // Do not keep a half-made bond for the next attempt
             return false;
         }
+        Serial.printf("[%s] Paired / encrypted\n", tag);
     }
 
     subscribed = 0;
+    subscribeFailed = 0;
     writeChr = nullptr;
     const std::vector<NimBLERemoteService*>& services = client->getServices(true);
     for (NimBLERemoteService* s : services) {
         if (service[0] && !(s->getUUID() == NimBLEUUID(service))) continue;
+        if (!service[0] && !notifyUuid[0] && isStandardService(s->getUUID())) continue;
         const std::vector<NimBLERemoteCharacteristic*>& chrs = s->getCharacteristics(true);
         for (NimBLERemoteCharacteristic* c : chrs) {
             if (notifyUuid[0] ? (c->getUUID() == NimBLEUUID(notifyUuid)) : true) subscribeChr(c);
             if (writeUuid[0] && !writeChr && (c->getUUID() == NimBLEUUID(writeUuid))) writeChr = c;
         }
+    }
+    if (subscribed == 0 && subscribeFailed > 0) {
+        // Characteristics exist, but the device refuses the subscription without pairing
+        Serial.printf("[%s] Subscriptions refused - device needs a PIN (or a different one)\n", tag);
+        setState("PIN nötig?");
+        disconnect();
+        return false;
     }
     if (subscribed == 0 || (writeUuid[0] && !writeChr)) {
         Serial.printf("[%s] Service / characteristics not found - wrong device?\n", tag);
@@ -185,7 +239,8 @@ bool BleLink::finishConnect() {
 void BleLink::connectFailed() {
     retryDelay = retryDelay ? min(retryDelay * 2, (unsigned long)BLE_RETRY_MAX_MS) : BLE_RETRY_MS;
     lastAttempt = millis();
-    if (strcmp(stateText, "Kopplung fehlgeschlagen") && strcmp(stateText, "Falsches Gerät?")) {
+    if (strcmp(stateText, "Kopplung fehlgeschlagen") && strcmp(stateText, "Falsches Gerät?") &&
+        strcmp(stateText, "PIN nötig?")) {
         setState("Nicht erreichbar");
     }
 }

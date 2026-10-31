@@ -22,7 +22,7 @@ struct RvCfg {
 
 static const Field RV_FIELDS[] = {
     FLD_MAC(RvCfg, mac, "mac", "Hauben-MAC", "Über \"Suchen\" aus der Liste wählen"),
-    FLD_TEXT(RvCfg, pin, "pin", "PIN", "Nur Ziffern (max. 6). Leer lassen, wenn keine nötig ist. "
+    FLD_TEXT(RvCfg, pin, "pin", "PIN", "Nur Ziffern (1-6, auch 000000). Leer lassen, wenn keine nötig ist. "
                                        "Kein anderes Gerät (Handy) darf gleichzeitig verbunden sein."),
 };
 
@@ -63,7 +63,7 @@ public:
     void* cfg() override { return &c; }
     void setDefaults() override { memset(&c, 0, sizeof(c)); }
     void onConfigChanged() override {
-        pinValue = parsePin(c.pin);
+        pinValue = blePinParse(c.pin);
         if (strcmp(c.mac, lastMac) != 0) {
             strlcpy(lastMac, c.mac, sizeof(lastMac));
             position = -1;
@@ -220,7 +220,7 @@ private:
     BleLink link;
     bool begun = false;
     char lastMac[18] = "";
-    uint32_t pinValue = 0;
+    int32_t pinValue = BLE_NO_PIN;
     uint32_t lastLinkChanges = 0;
 
     int position = -1;               // Reported position, -1 = unknown
@@ -238,15 +238,6 @@ private:
     // Telegram reassembly: BLE UART bridges split telegrams or bundle several in one packet
     char rx[24];
     size_t rxLen = 0;
-
-    static uint32_t parsePin(const char* s) {
-        size_t n = strlen(s);
-        if (n == 0) return 0;
-        if (n > 6) return 0;
-        for (size_t i = 0; i < n; i++) if (!isdigit((unsigned char)s[i])) return 0;
-        uint32_t v = (uint32_t)atol(s);
-        return v ? v : 0;
-    }
 
     int displayPosition() const { return position > 100 ? 100 : position; }   // "Lüften" reports 102
 

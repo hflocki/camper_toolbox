@@ -2,6 +2,7 @@
 // Protocol ported from the Home Assistant integration "carawater_isp15":
 //   notify FF01: status frame  AA 93 <status> .. <U16LE values at 6..19>
 //   write  FF02: 60 byte frame AA 39 <status> .. 22 12 07 .. <checksum>
+// Some pumps use FFF0/FFF1/FFF2 instead; both layouts are tried automatically.
 
 #include "../core/plugin.h"
 
@@ -9,9 +10,18 @@
 
 #include "../core/ble_link.h"
 
-#define SEAFLO_SERVICE_UUID "0000fff0-0000-1000-8000-00805f9b34fb"
-#define SEAFLO_NOTIFY_UUID  "0000fff1-0000-1000-8000-00805f9b34fb" // Oft FFF1 bei Seaflo
-#define SEAFLO_WRITE_UUID   "0000fff2-0000-1000-8000-00805f9b34fb" // Oft FFF2 bei Seaflo
+// Two known GATT layouts: FF00/FF01/FF02 (ISP 15, as in the HA integration) and
+// FFF0/FFF1/FFF2 (other Seaflo based pumps). The plugin starts with the first one and
+// switches to the other one if the service is not found ("Falsches Gerät?").
+struct PumpUuids {
+    const char* service;
+    const char* notify;
+    const char* write;
+};
+static const PumpUuids PUMP_LAYOUTS[] = {
+    {PUMP_SERVICE_UUID, PUMP_NOTIFY_UUID, PUMP_WRITE_UUID},
+    {PUMP_ALT_SERVICE_UUID, PUMP_ALT_NOTIFY_UUID, PUMP_ALT_WRITE_UUID},
+};
 
 struct PumpCfg {
     char mac[18];
@@ -70,7 +80,8 @@ public:
     const char* model() const override { return c.model[0] ? c.model : "Pumpe"; }
 
     void begin() override {
-        link.begin(id, SEAFLO_SERVICE_UUID, SEAFLO_NOTIFY_UUID, SEAFLO_WRITE_UUID);
+        const PumpUuids& u = PUMP_LAYOUTS[layout];
+        link.begin(id, u.service, u.notify, u.write);
         link.setSilenceTimeout(PUMP_OFFLINE_MS * 4);   // Connected but silent: reconnect
         begun = true;
         link.setTarget(c.mac);
@@ -81,18 +92,21 @@ public:
         BlePacket pkt;
         while (link.receive(pkt)) parseFrame(pkt.data, pkt.len);
 
-        // Handshake: Einmalig nach dem Verbinden den Status abfragen
-        bool currentConnected = link.connected();
-        if (currentConnected && !wasConnected && !hasData) {
-            Serial.printf("[%s] Frisch verbunden. Sende Initial-Request...\n", id);
-            writeStatus(statusRaw);
-        }
-        wasConnected = currentConnected;
+        // No "handshake" write here: before the first status frame statusRaw is 0, and
+        // writing it would switch the pump OFF (enable bit cleared, invalid pressure level).
+        // The pump sends its status frames on its own once notifications are subscribed.
 
         bool avail = available();
         if (avail != lastAvailable || link.changes != lastLinkChanges) {
             lastAvailable = avail;
             lastLinkChanges = link.changes;
+            // Service not found: try the other known GATT layout on the next attempt
+            if (!strcmp(link.state(), "Falsches Gerät?")) {
+                layout = (layout + 1) % (sizeof(PUMP_LAYOUTS) / sizeof(PUMP_LAYOUTS[0]));
+                const PumpUuids& u = PUMP_LAYOUTS[layout];
+                Serial.printf("[%s] Trying GATT layout %s\n", id, u.service);
+                link.setUuids(u.service, u.notify, u.write);
+            }
             updates++;
         }
     }
@@ -188,7 +202,7 @@ public:
 private:
     PumpCfg c;
     BleLink link;
-    bool wasConnected = false;
+    uint8_t layout = 0;    // Index into PUMP_LAYOUTS
     bool begun = false;
     char lastMac[18] = "";
 
