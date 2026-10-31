@@ -163,15 +163,24 @@ mv ~/Downloads/arduino-littlefs-upload-*.vsix ~/.arduinoIDE/plugins/
 
 ## 📦 Fertige Firmware & Updates (ohne Arduino IDE)
 
-Unter **[Releases](https://github.com/hflocki/camper_toolbox/releases)** liegt für jeden Chip fertige Firmware. Alle Plugins sind enthalten und werden in der Web-UI ein- bzw. ausgeschaltet (nicht benötigte am besten ausschalten).
+Unter **[Releases](https://github.com/hflocki/camper_toolbox/releases)** liegt für jeden Chip fertige Firmware in zwei Varianten. Die enthaltenen Plugins werden in der Web-UI ein- bzw. ausgeschaltet (nicht benötigte am besten ausschalten).
 
-| Datei                                  | Wofür                                                           |
-| -------------------------------------- | --------------------------------------------------------------- |
-| `camper_toolbox-<chip>-vX.Y.Z-full.bin` | **Erstinstallation** per USB, an Adresse `0x0` flashen          |
-| `camper_toolbox-<chip>-vX.Y.Z-ota.bin`  | **Update** über die Web-UI                                      |
-| `index.html.gz`                        | Web-Oberfläche, über die Web-UI hochladen                       |
+| Datei                                             | Wofür                                                  |
+| ------------------------------------------------- | ------------------------------------------------------ |
+| `camper_toolbox-<chip>-<variante>-vX.Y.Z-full.bin` | **Erstinstallation** per USB, an Adresse `0x0` flashen |
+| `camper_toolbox-<chip>-<variante>-vX.Y.Z-ota.bin`  | **Update** über die Web-UI                             |
+| `index.html.gz`                                   | Web-Oberfläche, über die Web-UI hochladen              |
 
 `<chip>` ist `esp32c3` (z. B. C3 Super Mini), `esp32s3` oder `esp32` (klassischer ESP32).
+
+| Variante            | Enthalten                                                                    |
+| ------------------- | ---------------------------------------------------------------------------- |
+| `all`               | Gas (DIMES, Mopeka Pro, Mopeka Standard), Wasserpumpe, 1 Dachhaube, Kühlschrank |
+| `dimes-heki-fridge` | Gas DIMES, **bis zu 2 Dachhauben** (RV Tech), Kühlschrank                    |
+
+Ein ESP32 hält höchstens **3 Bluetooth-Verbindungen** (Pumpe, Dachhauben, Kühlschrank zusammen). Deshalb gibt es keine Variante mit Pumpe **und** zwei Dachhauben **und** Kühlschrank – dafür zwei ESP32 nehmen oder selbst bauen (`config_local.h`, z. B. `#define PLUGIN_RVTECH 2`).
+
+Bei zwei Dachhauben erscheinen „Dachhaube“ und „Dachhaube 2“ als eigene Plugins mit eigener MAC und PIN, in Home Assistant als getrennte Geräte. Wer nur eine hat, schaltet „Dachhaube 2“ in der Web-UI aus.
 
 **Erstinstallation:** `-full.bin` z. B. mit dem [ESP Web Flasher](https://espressif.github.io/esptool-js/) an Adresse `0x0` flashen. Danach mit dem WLAN `Camper-Toolbox-XXXXXX` verbinden, `http://192.168.4.1` öffnen, `index.html.gz` hochladen und WLAN / MQTT einrichten.
 
