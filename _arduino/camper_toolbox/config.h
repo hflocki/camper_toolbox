@@ -22,7 +22,11 @@
 // Bluetooth limits of one ESP32:
 //   - passive sensors (DIMES, Mopeka) only listen, any number works
 //   - connecting devices (pump, roof hatch, fridge) keep a BLE connection each:
-//     at most 3 of them in total (NimBLE default CONFIG_BT_NIMBLE_MAX_CONNECTIONS)
+//     PLUGIN_CARAWATER + PLUGIN_RVTECH + PLUGIN_WCS_FRIDGE <= 3
+//     (NimBLE default CONFIG_BT_NIMBLE_MAX_CONNECTIONS), e.g.
+//       pump 1 + hatch 1 + fridge 1 = 3 ok
+//       pump 0 + hatch 2 + fridge 1 = 3 ok
+//       pump 1 + hatch 2 + fridge 1 = 4 -> build error
 // ============================================================
 #ifndef PLUGIN_DIMES
 #define PLUGIN_DIMES          1      // Gas: Rotarex DIMES / SRG WAVE (passive BLE)
@@ -34,13 +38,13 @@
 #define PLUGIN_MOPEKA_STD     0      // Gas: Mopeka Standard / Std Check (older model)
 #endif
 #ifndef PLUGIN_CARAWATER
-#define PLUGIN_CARAWATER      0      // Water pump: CaraWater (e.g. ISP 15), BLE connection
+#define PLUGIN_CARAWATER      0      // Water pump: CaraWater (e.g. ISP 15), BLE connection (counts towards 3)
 #endif
 #ifndef PLUGIN_RVTECH
-#define PLUGIN_RVTECH         0      // Roof hatch: RV Tech skylight motor control, BLE connection
+#define PLUGIN_RVTECH         0      // Roof hatch: RV Tech skylight motor control, BLE connection (counts towards 3)
 #endif
 #ifndef PLUGIN_WCS_FRIDGE
-#define PLUGIN_WCS_FRIDGE     0      // Fridge: WCS compressor fridge, BLE connection
+#define PLUGIN_WCS_FRIDGE     0      // Fridge: WCS compressor fridge, BLE connection (counts towards 3)
 #endif
 
 // Derived switches (do not edit)
@@ -50,7 +54,7 @@
 #define CT_PLUGIN_COUNT (CT_BLE_PASSIVE + CT_BLE_LINKS)
 
 #if CT_BLE_LINKS > 3
-#error "At most 3 connecting BLE plugins (pump, roof hatch, fridge) fit on one ESP32"
+#error "At most 3 connecting BLE plugins fit on one ESP32: PLUGIN_CARAWATER + PLUGIN_RVTECH + PLUGIN_WCS_FRIDGE must be 3 or less"
 #endif
 #if CT_PLUGIN_COUNT > 8
 #error "At most 8 plugin instances per device"
