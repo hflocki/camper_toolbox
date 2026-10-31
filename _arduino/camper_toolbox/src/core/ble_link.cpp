@@ -70,12 +70,67 @@ void BleLink::onConnect(NimBLEClient* c) {
 }
 
 void BleLink::onConnectFail(NimBLEClient* c, int reason) {
+    pendingReason = reason;
     connectResult = -1;
 }
 
 void BleLink::onDisconnect(NimBLEClient* c, int reason) {
+    pendingReason = reason;
     if (isConnecting) connectResult = -1;
     else linkLost = true;
+}
+
+void BleLink::onAuthenticationComplete(NimBLEConnInfo& info) {
+    authEncrypted = info.isEncrypted();
+    authAuthenticated = info.isAuthenticated();
+    authBonded = info.isBonded();
+    authDone = true;
+}
+
+// NimBLE reports HCI reasons as 0x200 + HCI code and SMP errors as
+// 0x400 (our side) / 0x500 (reported by the device) + SMP code
+const char* bleReasonText(int reason) {
+    if (reason >= 0x400 && reason < 0x600) reason = 0x500 | (reason & 0xFF);
+    switch (reason) {
+        case 0x205: return "Kopplung abgelehnt (PIN?)";
+        case 0x206: return "Schlüssel fehlt (neu koppeln)";
+        case 0x208: return "Zeitüberschreitung";
+        case 0x213: return "Vom Gerät getrennt";
+        case 0x214: return "Gerät: zu wenig Ressourcen";
+        case 0x216: return "Vom ESP getrennt";
+        case 0x222: return "Zeitüberschreitung (LL)";
+        case 0x23B: return "Verbindungsparameter abgelehnt";
+        case 0x23D: return "MIC-Fehler (Schlüssel falsch)";
+        case 0x23E: return "Verbindungsaufbau fehlgeschlagen";
+        case 0x501: return "PIN-Eingabe fehlgeschlagen";
+        case 0x502: return "Kopplung: OOB fehlt";
+        case 0x503: return "Kopplung: Sicherheit zu gering";
+        case 0x504: return "PIN falsch";
+        case 0x505: return "Kopplung nicht unterstützt";
+        case 0x506: return "Schlüssel zu kurz";
+        case 0x508: return "Kopplung abgelehnt";
+        case 0x509: return "Zu viele Versuche - warten";
+        case 13:    return "Zeitüberschreitung (Host)";
+        case BLE_REASON_SILENT:     return "Keine Daten erhalten (Abfragebefehl nötig?)";
+        case BLE_REASON_PAIRING:    return "Kopplung fehlgeschlagen (PIN / Handy noch gekoppelt?)";
+        case BLE_REASON_NEED_PIN:   return "Gerät verlangt Kopplung (PIN eintragen)";
+        case BLE_REASON_NO_SERVICE: return "Dienst nicht gefunden (falsches Gerät?)";
+        default:    return "Bluetooth-Fehler";
+    }
+}
+
+// Logs every service and characteristic with its properties (diagnosis for unknown devices)
+void BleLink::dumpGatt() {
+    Serial.printf("[%s] GATT table:\n", tag);
+    for (NimBLERemoteService* s : client->getServices(false)) {
+        Serial.printf("[%s]   service %s\n", tag, s->getUUID().toString().c_str());
+        for (NimBLERemoteCharacteristic* c : s->getCharacteristics(false)) {
+            Serial.printf("[%s]     char %s  %s%s%s%s%s\n", tag, c->getUUID().toString().c_str(),
+                c->canRead() ? "read " : "", c->canWrite() ? "write " : "",
+                c->canWriteNoResponse() ? "write-nr " : "", c->canNotify() ? "notify " : "",
+                c->canIndicate() ? "indicate " : "");
+        }
+    }
 }
 
 void BleLink::onPassKeyEntry(NimBLEConnInfo& info) {
@@ -189,7 +244,11 @@ bool BleLink::finishConnect() {
         bool ok = client->secureConnection(false);
         NimBLEDevice::setSecurityAuth(BLE_SEC_BOND, BLE_SEC_MITM, BLE_SEC_SC);
         if (!ok) {
-            Serial.printf("[%s] Pairing failed - wrong PIN, or the device is still bonded to a phone?\n", tag);
+            int e = client->getLastError();
+            lastReason = (e >= 0x100) ? e : BLE_REASON_PAIRING;
+            changes++;
+            Serial.printf("[%s] Pairing failed (0x%03X: %s) - wrong PIN, or the device is still bonded to a phone?\n",
+                tag, e, bleReasonText(lastReason));
             setState("Kopplung fehlgeschlagen");
             disconnect();
             forgetBond();   // Do not keep a half-made bond for the next attempt
@@ -197,15 +256,22 @@ bool BleLink::finishConnect() {
         }
         Serial.printf("[%s] Paired / encrypted\n", tag);
     }
+    if (authDone) {
+        authDone = false;
+        Serial.printf("[%s] Security: encrypted %s, authenticated %s, bonded %s\n", tag,
+            authEncrypted ? "yes" : "no", authAuthenticated ? "yes" : "no", authBonded ? "yes" : "no");
+    }
 
     subscribed = 0;
     subscribeFailed = 0;
     writeChr = nullptr;
     const std::vector<NimBLERemoteService*>& services = client->getServices(true);
+    for (NimBLERemoteService* s : services) s->getCharacteristics(true);
+    dumpGatt();
     for (NimBLERemoteService* s : services) {
         if (service[0] && !(s->getUUID() == NimBLEUUID(service))) continue;
         if (!service[0] && !notifyUuid[0] && isStandardService(s->getUUID())) continue;
-        const std::vector<NimBLERemoteCharacteristic*>& chrs = s->getCharacteristics(true);
+        const std::vector<NimBLERemoteCharacteristic*>& chrs = s->getCharacteristics(false);   // Fetched above
         for (NimBLERemoteCharacteristic* c : chrs) {
             if (notifyUuid[0] ? (c->getUUID() == NimBLEUUID(notifyUuid)) : true) subscribeChr(c);
             if (writeUuid[0] && !writeChr && (c->getUUID() == NimBLEUUID(writeUuid))) writeChr = c;
@@ -214,12 +280,16 @@ bool BleLink::finishConnect() {
     if (subscribed == 0 && subscribeFailed > 0) {
         // Characteristics exist, but the device refuses the subscription without pairing
         Serial.printf("[%s] Subscriptions refused - device needs a PIN (or a different one)\n", tag);
+        lastReason = BLE_REASON_NEED_PIN;
+        changes++;
         setState("PIN nötig?");
         disconnect();
         return false;
     }
     if (subscribed == 0 || (writeUuid[0] && !writeChr)) {
         Serial.printf("[%s] Service / characteristics not found - wrong device?\n", tag);
+        lastReason = BLE_REASON_NO_SERVICE;
+        changes++;
         setState("Falsches Gerät?");
         disconnect();
         return false;
@@ -227,6 +297,8 @@ bool BleLink::finishConnect() {
 
     linkLost = false;
     linkUp = true;
+    lastReason = 0;
+    rxLogged = 0;
     lastRx = millis();
     mtuValue = client->getMTU();
     lastRssiValue = client->getRssi();
@@ -246,6 +318,15 @@ void BleLink::connectFailed() {
 }
 
 void BleLink::loop() {
+    int r = pendingReason;
+    if (r) {
+        pendingReason = 0;
+        // Our own disconnect after a diagnosed problem: keep the more useful reason
+        bool own = lastReason > 0 && lastReason < 0x100;
+        if (!(r == 0x216 && (own || lastReason >= 0x400))) lastReason = r;
+        changes++;
+        Serial.printf("[%s] Reason 0x%03X: %s\n", tag, r, bleReasonText(r));
+    }
     if (linkLost) {
         linkLost = false;
         if (linkUp) Serial.printf("[%s] Disconnected\n", tag);
@@ -286,7 +367,9 @@ void BleLink::loop() {
     } else {
         setState("Verbunden");
         if (silenceMs && millis() - lastRx > silenceMs) {
-            Serial.printf("[%s] Nothing received for %lu s - reconnecting\n", tag, silenceMs / 1000);
+            Serial.printf("[%s] Nothing received for %lu s - reconnecting (poll command needed?)\n", tag, silenceMs / 1000);
+            lastReason = BLE_REASON_SILENT;
+            changes++;
             disconnect();
             retryDelay = RECONNECT_DELAY_MS;
             lastAttempt = millis();
@@ -308,6 +391,15 @@ bool BleLink::receive(BlePacket& p) {
     if (!queue) return false;
     if (xQueueReceive(queue, &p, 0) != pdTRUE) return false;
     lastRx = millis();
+    // Diagnosis: the first packets of every connection as hex and text
+    if (rxLogged < 20) {
+        rxLogged++;
+        Serial.printf("[%s] RX %u bytes:", tag, (unsigned)p.len);
+        for (uint16_t i = 0; i < p.len; i++) Serial.printf(" %02X", p.data[i]);
+        Serial.print("  |");
+        for (uint16_t i = 0; i < p.len; i++) Serial.print(isprint(p.data[i]) ? (char)p.data[i] : '.');
+        Serial.println("|");
+    }
     return true;
 }
 

@@ -25,6 +25,14 @@
 
 #define BLE_PACKET_MAX 128
 #define BLE_NO_PIN     (-1)
+// Own reason codes (below 0x100, NimBLE codes start at 0x100)
+#define BLE_REASON_SILENT     1   // Connected, but the device sent nothing
+#define BLE_REASON_PAIRING    2   // Pairing failed, no detailed code from the stack
+#define BLE_REASON_NEED_PIN   3   // Subscriptions refused: device needs pairing
+#define BLE_REASON_NO_SERVICE 4   // Expected service / characteristic missing
+
+// Short German text for a NimBLE connect / disconnect reason (HCI or host error code)
+const char* bleReasonText(int reason);
 
 // Parses a PIN from the web UI: 1-6 digits. Returns BLE_NO_PIN for an empty or invalid
 // string. "000000" is a valid PIN (value 0) and must not be mistaken for "no PIN".
@@ -59,6 +67,8 @@ public:
     uint16_t mtu() const { return mtuValue; }
     unsigned long lastReceive() const { return lastRx; }   // millis() of the last notification
     uint8_t subscriptions() const { return subscribed; }
+    int lastError() const { return lastReason; }   // Last connect / disconnect reason, 0 = none
+    const char* lastErrorText() const { return lastReason ? bleReasonText(lastReason) : ""; }
 
     bool write(const uint8_t* d, size_t n, bool response);
     bool write(const char* s, bool response) { return write((const uint8_t*)s, strlen(s), response); }
@@ -79,6 +89,7 @@ public:
     void onDisconnect(NimBLEClient* c, int reason) override;
     void onPassKeyEntry(NimBLEConnInfo& info) override;
     void onConfirmPasskey(NimBLEConnInfo& info, uint32_t pin) override;
+    void onAuthenticationComplete(NimBLEConnInfo& info) override;
 
 private:
     const char* tag = "LINK";
@@ -95,6 +106,11 @@ private:
 
     volatile int connectResult = 0;   // 0 = pending, 1 = connected, -1 = failed
     volatile bool linkLost = false;
+    volatile int lastReason = 0;      // Reason of the last failed connect / disconnect
+    volatile int pendingReason = 0;   // Set in the host task, logged from loop()
+    volatile bool authDone = false;   // Pairing / encryption result waiting to be logged
+    volatile bool authEncrypted = false, authAuthenticated = false, authBonded = false;
+    uint8_t rxLogged = 0;             // Packets logged as hex since the last connect
     bool isConnecting = false;
     bool linkUp = false;
     bool isReleased = false;
@@ -118,6 +134,7 @@ private:
     void markDisconnected();
     bool subscribeChr(NimBLERemoteCharacteristic* c);
     void forgetBond();
+    void dumpGatt();
     void push(const uint8_t* d, size_t n);
 };
 

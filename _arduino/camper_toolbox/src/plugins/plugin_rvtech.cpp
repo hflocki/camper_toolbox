@@ -167,6 +167,7 @@ public:
         s["min"] = 0;
         s["max"] = 100;
         s["v"] = position >= 0 ? displayPosition() : 0;
+        if (link.lastError()) liveRowText(o, "Letzter BT-Fehler", link.lastErrorText());
         liveCtrl(o, "switch", "release", "Bluetooth für App freigeben")["v"] = link.released();
     }
 

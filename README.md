@@ -42,7 +42,19 @@ Der **Status** in der Web-UI zeigt, wo es hakt:
 | `Warte auf Daten`         | Verbunden, aber noch keine Werte. Kühlschrank: „Letzte Nachricht“ und „Abonniert“ ansehen, ggf. Abfragebefehl setzen. |
 | `Verbunden`               | Alles in Ordnung.                                                                                                    |
 
-Mehr Details stehen im Serial Monitor (115200 Baud), z. B. `[rvtech] Pairing failed …` oder `Subscribe … FAILED`.
+Gibt es Probleme, zeigt die Live-Ansicht zusätzlich **„Letzter BT-Fehler“** (z. B. „PIN falsch“, „Vom Gerät getrennt“, „Keine Daten erhalten“).
+
+### Fehlersuche per Serial Monitor
+
+Für eine Fehlermeldung bitte den Serial Monitor (115200 Baud) vom Einschalten an mitschneiden, bis das Problem auftritt (beim Kühlschrank mindestens 3 Minuten). Dort steht pro Gerät u. a.:
+
+- `Connecting to … (type …)` / `Reason 0x…: …` – Verbindungsaufbau und Grund jeder Trennung
+- `Security: encrypted …, authenticated …, bonded …` – Ergebnis der Kopplung mit PIN
+- `GATT table:` – alle Dienste und Characteristics des Geräts mit ihren Eigenschaften
+- `Subscribed …` / `Subscribe … FAILED` – welche Characteristics Daten liefern dürfen
+- `RX … bytes: …` – die ersten 20 empfangenen Pakete jeder Verbindung als Hex und Text
+
+Den Log als Text (nicht als Foto) an den Entwickler schicken. MAC-Adressen dürfen geschwärzt werden.
 
 ## 📂 Projektstruktur
 

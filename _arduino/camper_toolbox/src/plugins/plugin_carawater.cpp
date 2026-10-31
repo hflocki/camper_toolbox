@@ -139,6 +139,7 @@ public:
             s["o"] = "Stufe 1|Stufe 2|Stufe 3";
             s["v"] = pressureLevel >= 1 && pressureLevel <= 3 ? pressureLevel - 1 : 0;
         }
+        if (link.lastError()) liveRowText(o, "Letzter BT-Fehler", link.lastErrorText());
         liveCtrl(o, "switch", "release", "Bluetooth für App freigeben")["v"] = link.released();
     }
 

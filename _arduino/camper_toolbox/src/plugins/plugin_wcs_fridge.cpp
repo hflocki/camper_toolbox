@@ -145,6 +145,7 @@ public:
         liveRowNum(o, "Bluetooth", link.connected() ? (float)link.rssi() : NAN, 0, "dBm");
         liveRowNum(o, "Nachrichten", (float)messages, 0, "");
         if (link.connected()) liveRowNum(o, "Abonniert", (float)link.subscriptions(), 0, "Char.");
+        if (link.lastError()) liveRowText(o, "Letzter BT-Fehler", link.lastErrorText());
         liveCtrl(o, "switch", "release", "Bluetooth für App freigeben")["v"] = link.released();
         o["raw"] = (const char*)lastLine;
     }
