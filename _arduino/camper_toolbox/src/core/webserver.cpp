@@ -238,7 +238,7 @@ void webserverInit() {
             request->send(response);
         } else {
             request->send(200, "text/html",
-                "<h1>Camper Tool</h1><p>Web page missing. Upload <code>data/index.html.gz</code> "
+                "<h1>Camper Toolbox</h1><p>Web page missing. Upload <code>data/index.html.gz</code> "
                 "or a firmware (.bin):</p><form method=POST action=/api/update enctype=multipart/form-data>"
                 "<input type=file name=f accept='.bin,.gz'> <button>Upload</button></form>");
         }
