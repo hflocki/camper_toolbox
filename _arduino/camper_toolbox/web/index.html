@@ -353,7 +353,9 @@
       // ---------------- Navigation ----------------
       function tabs() {
         const t = [["live", "Live"]];
-        for (const p of CFG.plugins) t.push(["p:" + p.id, p.cfg.name]);
+        // Disabled plugins get no tab; they are switched on in System -> Plugins
+        for (const p of CFG.plugins)
+          if (p.cfg.enabled) t.push(["p:" + p.id, p.cfg.name]);
         t.push(
           ["ble", "Bluetooth"],
           ["wifi", "WLAN"],
@@ -380,8 +382,14 @@
         const m = $("#main");
         m.replaceChildren();
         if (tab == "live") renderLive();
-        else if (tab.startsWith("p:"))
-          renderPlugin(CFG.plugins.find((p) => "p:" + p.id == tab));
+        else if (tab.startsWith("p:")) {
+          const p = CFG.plugins.find((x) => "p:" + x.id == tab);
+          if (p && p.cfg.enabled) renderPlugin(p);
+          else {
+            tab = "live";
+            return render();
+          }
+        }
         else if (tab == "ble") renderBle();
         else if (tab == "wifi") renderWifi();
         else if (tab == "mqtt") renderMqtt();
@@ -403,6 +411,14 @@
               "Keine Plugins einkompiliert – siehe config.h.",
             ),
           );
+        else if (!CFG.plugins.some((p) => p.cfg.enabled))
+          g.append(
+            el(
+              "div",
+              { className: "card" },
+              "Alle Plugins sind ausgeschaltet – unter System → Plugins einschalten.",
+            ),
+          );
         updateLive();
       }
       function updateLive() {
@@ -411,7 +427,7 @@
         const a = document.activeElement;
         if (a && g.contains(a) && (a.type == "range" || a.tagName == "SELECT"))
           return; // Do not disturb an open control
-        g.replaceChildren(...LIVE.plugins.map(card));
+        g.replaceChildren(...LIVE.plugins.filter((p) => p.enabled).map(card));
       }
       function card(p) {
         const c = el("div", { className: "card" });
@@ -431,7 +447,7 @@
             el(
               "div",
               { className: "mute" },
-              "Im Tab „" + p.name + "“ einschalten.",
+              "Unter System → Plugins einschalten.",
             ),
           );
           return c;
@@ -614,20 +630,6 @@
             el("span", { className: "mute", textContent: "ID: " + p.id }),
           ),
         );
-        const en = el("input", { type: "checkbox", checked: p.cfg.enabled });
-        c.append(
-          el(
-            "div",
-            { className: "f" },
-            el(
-              "label",
-              { style: "display:flex;gap:8px;align-items:center" },
-              en,
-              "Aktiv",
-            ),
-            el("small", {}, "Änderung startet das Gerät neu."),
-          ),
-        );
         const nm = el("input", {
           type: "text",
           value: p.cfg.name,
@@ -651,7 +653,6 @@
             on: {
               click: async () => {
                 const cfg = readFields(box);
-                cfg.enabled = en.checked;
                 cfg.name = nm.value.trim();
                 try {
                   const r = await api("/api/config", { plugin: p.id, cfg });
@@ -948,9 +949,63 @@
           ),
         );
       }
+      function renderPlugins() {
+        if (!CFG.plugins.length) return;
+        const boxes = CFG.plugins.map((p) => {
+          const i = el("input", { type: "checkbox", checked: p.cfg.enabled });
+          i.dataset.id = p.id;
+          return el(
+            "div",
+            { className: "f" },
+            el(
+              "label",
+              { style: "display:flex;gap:8px;align-items:center" },
+              i,
+              p.cfg.name,
+              el("span", { className: "mute", textContent: p.type_name }),
+            ),
+          );
+        });
+        $("#main").append(
+          el(
+            "div",
+            { className: "card" },
+            el("h2", {}, "Plugins"),
+            ...boxes,
+            el(
+              "small",
+              { className: "mute" },
+              "Ausgeschaltete Plugins verschwinden aus der Leiste und aus Home Assistant. Änderung startet das Gerät neu.",
+            ),
+            el("button", {
+              className: "b",
+              textContent: "Speichern",
+              on: {
+                click: async () => {
+                  const enabled = {};
+                  for (const b of boxes) {
+                    const i = b.querySelector("input");
+                    enabled[i.dataset.id] = i.checked;
+                  }
+                  try {
+                    const r = await api("/api/config", { enabled });
+                    if (r.restart) {
+                      toast("Gespeichert – Neustart…");
+                      setTimeout(() => location.reload(), 8000);
+                    } else toast("Keine Änderung");
+                  } catch (e) {
+                    toast(e.message);
+                  }
+                },
+              },
+            }),
+          ),
+        );
+      }
       function renderSys() {
         const c = CFG.core,
           L = LIVE || {};
+        renderPlugins();
         const box = el("div");
         box.append(
           inp("Benutzer", "web_user", c.web_user, "text", "Leer = kein Login"),

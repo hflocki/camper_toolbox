@@ -127,6 +127,14 @@ static void handleSaveConfig(AsyncWebServerRequest* request, uint8_t* data, size
     const char* err = nullptr;
     if (doc["core"].is<JsonObject>()) {
         err = coreConfigCheck(doc["core"].as<JsonObjectConst>(), restart);
+    } else if (doc["enabled"].is<JsonObject>()) {
+        // System tab, "Plugins": {"enabled": {"<plugin id>": true / false, ...}}
+        for (JsonPairConst kv : doc["enabled"].as<JsonObjectConst>()) {
+            Plugin* p = pluginById(kv.key().c_str());
+            if (!p) { err = "Unbekanntes Plugin"; break; }
+            if (!kv.value().is<bool>()) { err = "Ungültiger Wert"; break; }
+            if (kv.value().as<bool>() != p->enabled) restart = true;
+        }
     } else if (doc["plugin"].is<const char*>()) {
         Plugin* p = pluginById(doc["plugin"].as<const char*>());
         if (!p) err = "Unbekanntes Plugin";
@@ -355,6 +363,13 @@ static void applyPendingConfig() {
     if (doc["core"].is<JsonObject>()) {
         coreConfigApply(doc["core"].as<JsonObjectConst>());
         Serial.println("[Web] Core settings changed");
+    } else if (doc["enabled"].is<JsonObject>()) {
+        // Takes effect after the restart (plugins are only started at boot)
+        for (JsonPairConst kv : doc["enabled"].as<JsonObjectConst>()) {
+            Plugin* p = pluginById(kv.key().c_str());
+            if (p && kv.value().is<bool>()) p->enabled = kv.value().as<bool>();
+        }
+        Serial.println("[Web] Plugin selection changed");
     } else {
         Plugin* p = pluginById(doc["plugin"] | "");
         if (!p) return;
