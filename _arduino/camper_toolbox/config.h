@@ -62,7 +62,16 @@
 // ============================================================
 // GENERAL CONSTANTS
 // ============================================================
+// Release builds (GitHub Actions) set the version from the git tag
+#ifndef FW_VERSION
 #define FW_VERSION            "0.1.0"
+#endif
+
+// Network upload from the Arduino IDE. Release builds switch it off: their OTA password
+// would be the public placeholder below. Updates then go through the web UI (login).
+#ifndef ENABLE_ARDUINO_OTA
+#define ENABLE_ARDUINO_OTA    1
+#endif
 
 #ifndef DEVICE_NAME
 #define DEVICE_NAME           "Camper Toolbox"      // Name in Home Assistant and in the web UI

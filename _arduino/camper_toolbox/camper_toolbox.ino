@@ -12,7 +12,7 @@
  */
 
 #include <Arduino.h>
-#include <ArduinoOTA.h>
+#include <ArduinoOTA.h>   // also provides U_FLASH for the web upload
 #include <LittleFS.h>
 #include <WiFi.h>
 
@@ -30,6 +30,7 @@ CoreData coreData;
 static unsigned long lastStatusPrint = 0;
 
 void setupOTA() {
+#if ENABLE_ARDUINO_OTA
     ArduinoOTA.setHostname(OTA_HOSTNAME);
     ArduinoOTA.setPassword(DEFAULT_OTA_PASSWORD);
 
@@ -52,6 +53,9 @@ void setupOTA() {
 
     ArduinoOTA.begin();
     Serial.println("[OTA] Ready");
+#else
+    Serial.println("[OTA] Arduino IDE upload off - use the web UI");
+#endif
 }
 
 static void printRead() {
@@ -100,7 +104,9 @@ void setup() {
 
 void loop() {
     wifiManagerLoop();
+#if ENABLE_ARDUINO_OTA
     ArduinoOTA.handle();
+#endif
 
     bleLoop();
     FOR_EACH_ENABLED_PLUGIN(p) p->loop();

@@ -48,6 +48,7 @@ Mehr Details stehen im Serial Monitor (115200 Baud), z. B. `[rvtech] Pairing fai
 
 ```
 camper_toolbox/
+├── .github/workflows/release.yml  # Baut die Firmware und legt bei einem Tag ein Release an
 ├── _arduino/camper_toolbox/
 │   ├── camper_toolbox.ino         # Einstiegspunkt
 │   ├── config.h                   # Plugin-Auswahl, Standardwerte, BLE-Parameter
@@ -159,6 +160,37 @@ mv ~/Downloads/arduino-littlefs-upload-*.vsix ~/.arduinoIDE/plugins/
 > gzip -9 -n -c web/index.html > data/index.html.gz
 >
 > ```
+
+## 📦 Fertige Firmware & Updates (ohne Arduino IDE)
+
+Unter **[Releases](https://github.com/hflocki/camper_toolbox/releases)** liegt für jeden Chip fertige Firmware. Alle Plugins sind enthalten und werden in der Web-UI ein- bzw. ausgeschaltet (nicht benötigte am besten ausschalten).
+
+| Datei                                  | Wofür                                                           |
+| -------------------------------------- | --------------------------------------------------------------- |
+| `camper_toolbox-<chip>-vX.Y.Z-full.bin` | **Erstinstallation** per USB, an Adresse `0x0` flashen          |
+| `camper_toolbox-<chip>-vX.Y.Z-ota.bin`  | **Update** über die Web-UI                                      |
+| `index.html.gz`                        | Web-Oberfläche, über die Web-UI hochladen                       |
+
+`<chip>` ist `esp32c3` (z. B. C3 Super Mini), `esp32s3` oder `esp32` (klassischer ESP32).
+
+**Erstinstallation:** `-full.bin` z. B. mit dem [ESP Web Flasher](https://espressif.github.io/esptool-js/) an Adresse `0x0` flashen. Danach mit dem WLAN `Camper-Toolbox-XXXXXX` verbinden, `http://192.168.4.1` öffnen, `index.html.gz` hochladen und WLAN / MQTT einrichten.
+
+**Update:** Web-UI → Firmware-Upload → `-ota.bin` wählen. Danach startet das Gerät neu.
+
+> **Einstellungen bleiben erhalten.** Das Update ersetzt nur das Programm. WLAN, MQTT, Login, Plugin-Einstellungen (MAC, PIN …) und Bluetooth-Kopplungen liegen in eigenen Bereichen des Flash und werden nicht angefasst. Nur ein Flash mit „Erase All Flash“ oder ein Werksreset löscht sie.
+
+In Release-Builds ist der Netzwerk-Upload aus der Arduino IDE abgeschaltet; Updates laufen dort über die Web-UI (mit Web-Login, falls gesetzt).
+
+### Release erstellen (für Entwickler)
+
+Ein Tag startet den GitHub-Workflow `.github/workflows/release.yml`, der alle Chips baut und das Release anlegt:
+
+```
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+Die Versionsnummer aus dem Tag erscheint in der Web-UI und in Home Assistant.
 
 ## 🧪 Nutzung & Wartung
 

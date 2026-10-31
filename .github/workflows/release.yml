@@ -1,0 +1,141 @@
+# Builds the firmware for every supported chip and publishes a GitHub release.
+# Trigger: push a tag like v0.1.1   (git tag v0.1.1 && git push origin v0.1.1)
+# Manual run (Actions tab, "Run workflow"): builds only and keeps the files as artifacts.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  SKETCH_DIR: _arduino/camper_toolbox
+  ESP32_CORE: "3.3.9"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - chip: esp32c3
+            fqbn: esp32:esp32:esp32c3:PartitionScheme=min_spiffs,CDCOnBoot=cdc
+          - chip: esp32s3
+            fqbn: esp32:esp32:esp32s3:PartitionScheme=min_spiffs
+          - chip: esp32
+            fqbn: esp32:esp32:esp32:PartitionScheme=min_spiffs
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version from tag
+        id: ver
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            v="${GITHUB_REF_NAME#v}"
+          else
+            v="dev-${GITHUB_SHA::7}"
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Install arduino-cli
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Cache Arduino core and libraries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.arduino15
+            ~/Arduino/libraries
+          key: arduino-${{ env.ESP32_CORE }}-${{ hashFiles('.github/workflows/release.yml') }}
+
+      - name: Install ESP32 core and libraries
+        run: |
+          arduino-cli config init --overwrite
+          arduino-cli config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core update-index
+          arduino-cli core install "esp32:esp32@${ESP32_CORE}"
+          arduino-cli lib install \
+            "PubSubClient@2.8" \
+            "ArduinoJson@7.4.2" \
+            "ESP Async WebServer@3.12.1" \
+            "Async TCP@3.5.0" \
+            "NimBLE-Arduino@2.5.1"
+
+      # config_local.h is not in git. The release build gets its own one with every
+      # plugin compiled in; each one is switched on / off in the web UI. No passwords
+      # here: WiFi, MQTT and web login are set in the web UI and stay on the device.
+      - name: Release configuration
+        run: |
+          cat > "$SKETCH_DIR/config_local.h" <<EOF
+          #pragma once
+          #define FW_VERSION         "${{ steps.ver.outputs.version }}"
+          #define ENABLE_ARDUINO_OTA 0
+          #define PLUGIN_DIMES       1
+          #define PLUGIN_MOPEKA_PRO  1
+          #define PLUGIN_MOPEKA_STD  1
+          #define PLUGIN_CARAWATER   1
+          #define PLUGIN_RVTECH      1
+          #define PLUGIN_WCS_FRIDGE  1
+          EOF
+          cat "$SKETCH_DIR/config_local.h"
+
+      - name: Compile
+        run: |
+          arduino-cli compile --fqbn "${{ matrix.fqbn }}" --export-binaries \
+            --output-dir build "$SKETCH_DIR"
+          ls -la build
+
+      - name: Collect files
+        run: |
+          v="${{ steps.ver.outputs.version }}"
+          mkdir -p dist
+          # OTA update via the web UI (app only, settings stay untouched)
+          cp build/camper_toolbox.ino.bin "dist/camper_toolbox-${{ matrix.chip }}-v${v}-ota.bin"
+          # First install via USB (bootloader + partitions + app), flash at 0x0
+          cp build/camper_toolbox.ino.merged.bin "dist/camper_toolbox-${{ matrix.chip }}-v${v}-full.bin"
+          ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ matrix.chip }}
+          path: dist/*
+
+  release:
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Web page and checksums
+        run: |
+          cp _arduino/camper_toolbox/data/index.html.gz dist/index.html.gz
+          cd dist && sha256sum * > SHA256SUMS.txt && ls -la
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          body: |
+            ## Dateien
+
+            | Datei | Wofür |
+            | --- | --- |
+            | `camper_toolbox-<chip>-v…-ota.bin` | **Update** über die Web-UI (Einstellungen bleiben erhalten) |
+            | `camper_toolbox-<chip>-v…-full.bin` | **Erstinstallation** per USB, Adresse `0x0` |
+            | `index.html.gz` | Web-Oberfläche, über die Web-UI hochladen |
+
+            Chip: `esp32c3` (z. B. C3 Super Mini), `esp32s3` oder `esp32` (klassisch).
+            Alle Plugins sind enthalten und werden in der Web-UI ein- bzw. ausgeschaltet.
