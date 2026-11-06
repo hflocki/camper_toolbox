@@ -2,7 +2,7 @@
 // Protocol ported from the Home Assistant integration "carawater_isp15":
 //   notify FF01: status frame  AA 93 <status> .. <U16LE values at 6..19>
 //   write  FF02: 60 byte frame AA 39 <status> .. 22 12 07 .. <checksum>
-// Some pumps use FFF0/FFF1/FFF2 instead; both layouts are tried automatically.
+// Some pumps use FFF0/FFF1/FFF2 or FFE0/FFE1 instead; all layouts are tried automatically.
 
 #include "../core/plugin.h"
 
@@ -10,9 +10,9 @@
 
 #include "../core/ble_link.h"
 
-// Two known GATT layouts: FF00/FF01/FF02 (ISP 15, as in the HA integration) and
-// FFF0/FFF1/FFF2 (other Seaflo based pumps). The plugin starts with the first one and
-// switches to the other one if the service is not found ("Falsches Gerät?").
+// Known GATT layouts: FF00/FF01/FF02 (ISP 15, as in the HA integration),
+// FFF0/FFF1/FFF2 (other Seaflo based pumps), and FFE0/FFE1/FFE1.
+// The plugin starts with the first one and switches to the next one if the service is not found ("Falsches Gerät?").
 struct PumpUuids {
     const char* service;
     const char* notify;
@@ -76,7 +76,7 @@ public:
     uint8_t bleUse() const override { return BLE_LINK; }
     const char* bleAddress() const override { return c.mac; }
     bool bleCandidate(int32_t company, const char* uuid, const char* name) const override {
-        return strstr(uuid, "ff00") != nullptr || strstr(uuid, "fff0") != nullptr;
+        return strstr(uuid, "ff00") != nullptr || strstr(uuid, "fff0") != nullptr || strstr(uuid, "ffe0") != nullptr;
     }
     const char* manufacturer() const override { return "CaraWater"; }
     const char* model() const override { return c.model[0] ? c.model : "Pumpe"; }
@@ -239,27 +239,32 @@ private:
         leakDetection = (status & 0x04) != 0;
     }
 
-    // Status frame: AA 93 <status> ... U16LE at 6 voltage, 8 current, 10 pressure raw,
+    // Status frame: AA 93 <status> ... U16LE at 6 voltage, 8 current, 10 pressure raw (psi*10),
     // 12 temperature, 14 flow, 16 daily liters, 18 total liters
     void parseFrame(const uint8_t* d, size_t n) {
-        if (n < 20 || d[0] != 0xAA || d[1] != 0x93) return;
+        if (n < 20 || d[0] != 0xAA) return;
         uint8_t oldStatus = statusRaw;
         bool hadData = hasData;
 
         applyStatus(d[2]);
-        voltage = u16le(d, 6) / 10.0f;
-        current = u16le(d, 8) / 10.0f;
-        pressureRaw = u16le(d, 10);
-        pressure = pressureRaw * 0.0070992366f - 0.063740458f;
-        temperature = u16le(d, 12) / 10.0f;
-        flow = u16le(d, 14) / 10.0f;
-        dailyLiters = u16le(d, 16);
-        totalLiters = u16le(d, 18);
-        running = (current > 0.2f || flow > 0.0f);
+        running = (d[2] & 0x10) != 0;
+
+        // Messwerte (Little Endian)
+        voltage = u16le(d, 6) / 10.0f;     // Spannung
+        current = u16le(d, 8) / 10.0f;     // Strom
+        
+        // Druck von psi*10 in bar umrechnen
+        uint16_t psi_x10 = u16le(d, 10);
+        pressure = (psi_x10 / 10.0f) * 0.0689476f;
+
+        temperature = u16le(d, 12) / 10.0f; // Temperatur
+        flow = u16le(d, 14) / 10.0f;        // Durchfluss
+        dailyLiters = u16le(d, 16);         // Tagesverbrauch
+        totalLiters = u16le(d, 18);         // Gesamtverbrauch
+
         lastFrame = millis();
         hasData = true;
 
-        // Publish immediately on switch/level changes or pump start/stop; values follow periodically
         if (!hadData || oldStatus != statusRaw || lastRunning != running) {
             lastRunning = running;
             updates++;
