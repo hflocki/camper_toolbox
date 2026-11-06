@@ -68,18 +68,24 @@ public:
         c.poll_s = 30;
     }
     void onConfigChanged() override {
-        if (strcmp(c.mac, lastMac) != 0) {
-            strlcpy(lastMac, c.mac, sizeof(lastMac));
-            hasData = false;
-            updates++;
-        }
-        unescape(c.poll, pollCmd, sizeof(pollCmd));
-        pinValue = blePinParse(c.pin);
-        if (begun) {
-            link.setUuids(c.service, c.notify, c.write);
-            link.setTarget(c.mac, pinValue);
-        }
+    if (strcmp(c.mac, lastMac) != 0) {
+        strlcpy(lastMac, c.mac, sizeof(lastMac));
+        hasData = false;
+        updates++;
     }
+    
+    // UUIDS for services
+    strlcpy(c.service, "0000ffe0", sizeof(c.service));
+    strlcpy(c.notify, "0000ffe1", sizeof(c.notify));
+    strlcpy(c.write, "0000ffe1", sizeof(c.write));
+
+    unescape(c.poll, pollCmd, sizeof(pollCmd));
+    pinValue = blePinParse(c.pin);
+    if (begun) {
+        link.setUuids(c.service, c.notify, c.write);
+        link.setTarget(c.mac, pinValue);
+    }
+}
 
     uint8_t bleUse() const override { return BLE_LINK; }
     const char* bleAddress() const override { return c.mac; }
