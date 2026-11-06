@@ -12,7 +12,7 @@ build/
 # Personal settings of each device (see config_local.h.example)
 config_local.h
 
-
+doc/funde.txt
 
 # Python caches
 __pycache__/
