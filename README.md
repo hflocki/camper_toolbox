@@ -182,7 +182,7 @@ mv ~/Downloads/arduino-littlefs-upload-*.vsix ~/.arduinoIDE/plugins/
 
 ## 📦 Fertige Firmware & Updates (ohne Arduino IDE)
 
-Unter **[Releases](https://github.com/hflocki/camper_toolbox/releases)** liegt für jeden Chip fertige Firmware in zwei Varianten. Die enthaltenen Plugins werden in der Web-UI ein- bzw. ausgeschaltet (nicht benötigte am besten ausschalten).
+Unter **[Releases](https://github.com/hflocki/camper_toolbox/releases)** liegt für jeden Chip fertige Firmware in drei Varianten. Die enthaltenen Plugins werden in der Web-UI ein- bzw. ausgeschaltet (nicht benötigte am besten ausschalten).
 
 | Datei                                             | Wofür                                                  |
 | ------------------------------------------------- | ------------------------------------------------------ |
@@ -196,6 +196,7 @@ Unter **[Releases](https://github.com/hflocki/camper_toolbox/releases)** liegt f
 | ------------------- | ---------------------------------------------------------------------------- |
 | `all`               | Gas (DIMES, Mopeka Pro, Mopeka Standard), Wasserpumpe, 1 Dachhaube, Kühlschrank |
 | `dimes-heki-fridge` | Gas DIMES, **bis zu 2 Dachhauben** (RV Tech), Kühlschrank                    |
+| `dimes-heki-pump-fridge` | Gas DIMES, 1 Dachhaube (RV Tech), Wasserpumpe, Kühlschrank            |
 
 Ein ESP32 hält höchstens **3 Bluetooth-Verbindungen** (Pumpe, Dachhauben, Kühlschrank zusammen). Deshalb gibt es keine Variante mit Pumpe **und** zwei Dachhauben **und** Kühlschrank – dafür zwei ESP32 nehmen oder selbst bauen (`config_local.h`, z. B. `#define PLUGIN_RVTECH 2`).
 

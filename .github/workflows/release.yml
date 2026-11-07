@@ -32,7 +32,7 @@ jobs:
       fail-fast: false
       matrix:
         chip: [esp32c3, esp32s3, esp32]
-        variant: [all, dimes-heki-fridge]
+        variant: [all, dimes-heki-fridge, dimes-heki-pump-fridge]
         include:
           # Board settings per chip
           - chip: esp32c3
@@ -47,6 +47,8 @@ jobs:
             plugins: PLUGIN_DIMES=1 PLUGIN_MOPEKA_PRO=1 PLUGIN_MOPEKA_STD=1 PLUGIN_CARAWATER=1 PLUGIN_RVTECH=1 PLUGIN_WCS_FRIDGE=1
           - variant: dimes-heki-fridge
             plugins: PLUGIN_DIMES=1 PLUGIN_MOPEKA_PRO=0 PLUGIN_MOPEKA_STD=0 PLUGIN_CARAWATER=0 PLUGIN_RVTECH=2 PLUGIN_WCS_FRIDGE=1
+          - variant: dimes-heki-pump-fridge
+            plugins: PLUGIN_DIMES=1 PLUGIN_MOPEKA_PRO=0 PLUGIN_MOPEKA_STD=0 PLUGIN_CARAWATER=1 PLUGIN_RVTECH=1 PLUGIN_WCS_FRIDGE=1
 
     steps:
       - uses: actions/checkout@v4
@@ -156,6 +158,7 @@ jobs:
             **Variante:**
             - `all` – Gas (DIMES, Mopeka Pro, Mopeka Standard), Wasserpumpe, 1 Dachhaube, Kühlschrank
             - `dimes-heki-fridge` – Gas DIMES, **bis zu 2 Dachhauben**, Kühlschrank (keine Pumpe, kein Mopeka)
+            - `dimes-heki-pump-fridge` – Gas DIMES, 1 Dachhaube, Wasserpumpe, Kühlschrank (kein Mopeka)
 
             Nicht benötigte Plugins (z. B. „Dachhaube 2“) in der Web-UI ausschalten.
             Beim Wechsel der Variante bleiben die Einstellungen der Plugins erhalten, die in beiden enthalten sind.
