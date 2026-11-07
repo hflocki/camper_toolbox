@@ -1,7 +1,3 @@
-> wird hier fortgeführt zukünftig
-> https://github.com/hflocki/camper-mqtt/tree/main/firmware/toolbox
-
-
 > [!WARNING]
 > **IN ENTWICKLUNG – kein fertiges Projekt.** Wegen teils mangelnder Hardware nicht selber getestet.
 
