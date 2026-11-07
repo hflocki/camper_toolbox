@@ -67,6 +67,7 @@ Die Log-Datei bzw. den Serial-Log als Text (nicht als Foto) an den Entwickler sc
 ```
 camper_toolbox/
 ├── .github/workflows/release.yml  # Baut die Firmware und legt bei einem Tag ein Release an
+├── AGENTS.md                      # Regeln für KI-Assistenten (Patches, Version, Git-Befehle)
 ├── _arduino/camper_toolbox/
 │   ├── camper_toolbox.ino         # Einstiegspunkt
 │   ├── config.h                   # Plugin-Auswahl, Standardwerte, BLE-Parameter

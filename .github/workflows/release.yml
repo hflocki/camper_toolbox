@@ -1,0 +1,161 @@
+# Builds the firmware for every supported chip and publishes a GitHub release.
+# Trigger: push a tag like v0.1.1   (git tag v0.1.1 && git push origin v0.1.1)
+# Manual run (Actions tab, "Run workflow"): builds only and keeps the files as artifacts.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  SKETCH_DIR: _arduino/camper_toolbox
+  # Same core and library versions as the VanNode build (known to compile this code)
+  ESP32_CORE: "3.3.2"
+  # Libraries straight from the git tags of their GitHub repos (exact versions)
+  LIBS: >-
+    https://github.com/knolleary/pubsubclient.git#v2.8
+    https://github.com/bblanchon/ArduinoJson.git#v7.4.2
+    https://github.com/ESP32Async/ESPAsyncWebServer.git#v3.12.1
+    https://github.com/ESP32Async/AsyncTCP.git#v3.5.0
+    https://github.com/h2zero/NimBLE-Arduino.git#2.5.1
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        chip: [esp32c3, esp32s3, esp32]
+        variant: [all, dimes-heki-fridge]
+        include:
+          # Board settings per chip
+          - chip: esp32c3
+            fqbn: esp32:esp32:esp32c3:PartitionScheme=min_spiffs,CDCOnBoot=cdc
+          - chip: esp32s3
+            fqbn: esp32:esp32:esp32s3:PartitionScheme=min_spiffs
+          - chip: esp32
+            fqbn: esp32:esp32:esp32:PartitionScheme=min_spiffs
+          # Plugin set per variant (number = instances). At most 3 connecting devices
+          # (pump + roof hatches + fridges) fit on one ESP32.
+          - variant: all
+            plugins: PLUGIN_DIMES=1 PLUGIN_MOPEKA_PRO=1 PLUGIN_MOPEKA_STD=1 PLUGIN_CARAWATER=1 PLUGIN_RVTECH=1 PLUGIN_WCS_FRIDGE=1
+          - variant: dimes-heki-fridge
+            plugins: PLUGIN_DIMES=1 PLUGIN_MOPEKA_PRO=0 PLUGIN_MOPEKA_STD=0 PLUGIN_CARAWATER=0 PLUGIN_RVTECH=2 PLUGIN_WCS_FRIDGE=1
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version from tag
+        id: ver
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            v="${GITHUB_REF_NAME#v}"
+          else
+            v="dev-${GITHUB_SHA::7}"
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Install arduino-cli
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Cache Arduino core and libraries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.arduino15
+            ~/Arduino/libraries
+          key: arduino-${{ env.ESP32_CORE }}-${{ hashFiles('.github/workflows/release.yml') }}
+
+      - name: Install ESP32 core and libraries
+        run: |
+          arduino-cli config init --overwrite
+          arduino-cli config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core update-index
+          arduino-cli core install "esp32:esp32@${ESP32_CORE}"
+          arduino-cli config set library.enable_unsafe_install true
+          for url in $LIBS; do
+            arduino-cli lib install --git-url "$url"
+          done
+
+      # config_local.h is not in git. The release build gets its own one with the
+      # plugin set of the variant; each instance is switched on / off in the web UI.
+      # No passwords here: WiFi, MQTT and web login are set in the web UI and stay
+      # on the device.
+      - name: Release configuration
+        run: |
+          f="$SKETCH_DIR/config_local.h"
+          {
+            echo '#pragma once'
+            echo '#define FW_VERSION "${{ steps.ver.outputs.version }}"'
+            echo '#define ENABLE_ARDUINO_OTA 0'
+            for kv in ${{ matrix.plugins }}; do
+              echo "#define ${kv%%=*} ${kv#*=}"
+            done
+          } > "$f"
+          cat "$f"
+
+      - name: Compile
+        run: |
+          arduino-cli compile --fqbn "${{ matrix.fqbn }}" --export-binaries \
+            --output-dir build "$SKETCH_DIR"
+          ls -la build
+
+      - name: Collect files
+        run: |
+          v="${{ steps.ver.outputs.version }}"
+          mkdir -p dist
+          # OTA update via the web UI (app only, settings stay untouched)
+          cp build/camper_toolbox.ino.bin "dist/camper_toolbox-${{ matrix.chip }}-${{ matrix.variant }}-v${v}-ota.bin"
+          # First install via USB (bootloader + partitions + app), flash at 0x0
+          cp build/camper_toolbox.ino.merged.bin "dist/camper_toolbox-${{ matrix.chip }}-${{ matrix.variant }}-v${v}-full.bin"
+          ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ matrix.chip }}-${{ matrix.variant }}
+          path: dist/*
+
+  release:
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Web page and checksums
+        run: |
+          cp _arduino/camper_toolbox/data/index.html.gz dist/index.html.gz
+          cd dist && sha256sum * > SHA256SUMS.txt && ls -la
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          body: |
+            ## Dateien
+
+            | Datei | Wofür |
+            | --- | --- |
+            | `camper_toolbox-<chip>-<variante>-v…-ota.bin` | **Update** über die Web-UI (Einstellungen bleiben erhalten) |
+            | `camper_toolbox-<chip>-<variante>-v…-full.bin` | **Erstinstallation** per USB, Adresse `0x0` |
+            | `index.html.gz` | Web-Oberfläche, über die Web-UI hochladen |
+
+            **Chip:** `esp32c3` (z. B. C3 Super Mini), `esp32s3` oder `esp32` (klassisch).
+
+            **Variante:**
+            - `all` – Gas (DIMES, Mopeka Pro, Mopeka Standard), Wasserpumpe, 1 Dachhaube, Kühlschrank
+            - `dimes-heki-fridge` – Gas DIMES, **bis zu 2 Dachhauben**, Kühlschrank (keine Pumpe, kein Mopeka)
+
+            Nicht benötigte Plugins (z. B. „Dachhaube 2“) in der Web-UI ausschalten.
+            Beim Wechsel der Variante bleiben die Einstellungen der Plugins erhalten, die in beiden enthalten sind.
