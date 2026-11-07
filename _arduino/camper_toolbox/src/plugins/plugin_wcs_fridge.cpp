@@ -2,8 +2,8 @@
 // The fridge sends ASCII status messages (comma separated, possibly split over several
 // notifications):
 //   /SC0/t0,t1,t2,<temp zone 1>,<temp zone 2>,<set zone 1>,<set zone 2>,t7,<voltage x10>,t9,<battery %>,...
-// Field positions as in the ESPHome example of the fridge; the GATT layout is not
-// documented, so by default every characteristic that can notify is subscribed.
+// Field positions as in the ESPHome example of the fridge. GATT layout: service FFE0,
+// characteristic FFE1 for notify and write (can be changed in the web UI).
 
 #include "../core/plugin.h"
 
@@ -16,13 +16,18 @@
 #define WCS_IDLE_FLUSH  300    // ms without new data: the collected message is complete
 #define WCS_MIN_TOKENS  11
 
+// GATT layout of the fridge (BLE UART bridge), used when the web UI fields are empty
+#define WCS_SERVICE_UUID "0000ffe0-0000-1000-8000-00805f9b34fb"
+#define WCS_NOTIFY_UUID  "0000ffe1-0000-1000-8000-00805f9b34fb"
+#define WCS_WRITE_UUID   "0000ffe1-0000-1000-8000-00805f9b34fb"
+
 struct WcsCfg {
     char mac[18];
     char pin[8];           // Bluetooth PIN (digits), empty = no pairing
     bool zone2;            // Fridge has a second zone (freezer)
-    char service[40];      // GATT service UUID, empty = all services
-    char notify[40];       // Notify characteristic, empty = every one that can notify
-    char write[40];        // Write characteristic for the poll command, empty = none
+    char service[40];      // GATT service UUID, empty = FFE0, "*" = all services
+    char notify[40];       // Notify characteristic, empty = FFE1, "*" = every one that can notify
+    char write[40];        // Write characteristic for the poll command, empty = FFE1
     char poll[24];         // Poll command (ASCII), empty = fridge sends on its own
     int32_t poll_s;        // Poll interval in s
 };
@@ -32,9 +37,9 @@ static const Field WCS_FIELDS[] = {
     FLD_TEXT(WcsCfg, pin, "pin", "Bluetooth-PIN", "Nur Ziffern (1-6, auch 000000), wie in der Kühlschrank-App. "
                                              "Leer lassen, wenn keine nötig ist. Handy-App dabei trennen."),
     FLD_BOOL(WcsCfg, zone2, "zone2", "Zweite Zone", "Kühlschrank mit zweitem Fach / Gefrierfach"),
-    FLD_TEXT(WcsCfg, service, "service", "Service-UUID", "Leer = alle Services (Standard)"),
-    FLD_TEXT(WcsCfg, notify, "notify", "Notify-UUID", "Leer = jede Characteristic, die senden kann (Standard)"),
-    FLD_TEXT(WcsCfg, write, "write", "Write-UUID", "Nur für einen Abfragebefehl nötig"),
+    FLD_TEXT(WcsCfg, service, "service", "Service-UUID", "Leer = FFE0 (Standard), * = alle Services"),
+    FLD_TEXT(WcsCfg, notify, "notify", "Notify-UUID", "Leer = FFE1 (Standard), * = jede, die senden kann"),
+    FLD_TEXT(WcsCfg, write, "write", "Write-UUID", "Leer = FFE1 (Standard). Nur für einen Abfragebefehl nötig"),
     FLD_TEXT(WcsCfg, poll, "poll", "Abfragebefehl", "Leer = der Kühlschrank sendet von selbst. \\r und \\n erlaubt"),
     FLD_INT(WcsCfg, poll_s, "poll_s", "Abfrage alle", "s", 1, 3600, nullptr),
 };
@@ -68,24 +73,19 @@ public:
         c.poll_s = 30;
     }
     void onConfigChanged() override {
-    if (strcmp(c.mac, lastMac) != 0) {
-        strlcpy(lastMac, c.mac, sizeof(lastMac));
-        hasData = false;
-        updates++;
+        if (strcmp(c.mac, lastMac) != 0) {
+            strlcpy(lastMac, c.mac, sizeof(lastMac));
+            hasData = false;
+            updates++;
+        }
+        unescape(c.poll, pollCmd, sizeof(pollCmd));
+        pinValue = blePinParse(c.pin);
+        if (begun) {
+            link.setUuids(effUuid(c.service, WCS_SERVICE_UUID), effUuid(c.notify, WCS_NOTIFY_UUID),
+                          effUuid(c.write, WCS_WRITE_UUID));
+            link.setTarget(c.mac, pinValue);
+        }
     }
-    
-    // UUIDS for services
-    strlcpy(c.service, "0000ffe0", sizeof(c.service));
-    strlcpy(c.notify, "0000ffe1", sizeof(c.notify));
-    strlcpy(c.write, "0000ffe1", sizeof(c.write));
-
-    unescape(c.poll, pollCmd, sizeof(pollCmd));
-    pinValue = blePinParse(c.pin);
-    if (begun) {
-        link.setUuids(c.service, c.notify, c.write);
-        link.setTarget(c.mac, pinValue);
-    }
-}
 
     uint8_t bleUse() const override { return BLE_LINK; }
     const char* bleAddress() const override { return c.mac; }
@@ -95,7 +95,8 @@ public:
     const char* manufacturer() const override { return "WCS"; }
 
     void begin() override {
-        link.begin(id, c.service, c.notify, c.write);
+        link.begin(id, effUuid(c.service, WCS_SERVICE_UUID), effUuid(c.notify, WCS_NOTIFY_UUID),
+                   effUuid(c.write, WCS_WRITE_UUID));
         link.setSilenceTimeout(WCS_OFFLINE_MS);   // Connected but silent: reconnect
         begun = true;
         link.setTarget(c.mac, pinValue);
@@ -191,6 +192,14 @@ public:
     }
 
 private:
+    // Effective UUID: empty field = default (FFE0 / FFE1), "*" = no filter (all services /
+    // every notifying characteristic, for diagnosis), otherwise the value as entered
+    static const char* effUuid(const char* field, const char* def) {
+        if (!field[0]) return def;
+        if (!strcmp(field, "*")) return "";
+        return field;
+    }
+
     WcsCfg c;
     BleLink link;
     bool begun = false;

@@ -68,7 +68,7 @@
 // ============================================================
 // Release builds (GitHub Actions) set the version from the git tag
 #ifndef FW_VERSION
-#define FW_VERSION            "0.1.4"
+#define FW_VERSION            "0.1.6"
 #endif
 
 // Network upload from the Arduino IDE. Release builds switch it off: their OTA password
@@ -302,6 +302,9 @@
 #define PUMP_ALT_SERVICE_UUID "0000fff0-0000-1000-8000-00805f9b34fb"
 #define PUMP_ALT_NOTIFY_UUID  "0000fff1-0000-1000-8000-00805f9b34fb"
 #define PUMP_ALT_WRITE_UUID   "0000fff2-0000-1000-8000-00805f9b34fb"
+// Second alternative: BLE UART bridge, one characteristic for notify and write
+#define PUMP_ALT2_SERVICE_UUID "0000ffe0-0000-1000-8000-00805f9b34fb"
+#define PUMP_ALT2_CHAR_UUID    "0000ffe1-0000-1000-8000-00805f9b34fb"
 #ifndef PUMP_OFFLINE_MS
 #define PUMP_OFFLINE_MS       10000  // No status frame for 10 s = pump offline
 #endif

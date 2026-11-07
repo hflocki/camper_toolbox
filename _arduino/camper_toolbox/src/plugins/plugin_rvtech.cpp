@@ -97,6 +97,13 @@ public:
     void loop() override {
         link.loop();
 
+        // Connection state changed: publish at once (status, availability) and start
+        // with an empty telegram buffer
+        if (link.changes != lastLinkChanges) {
+            lastLinkChanges = link.changes;
+            rxLen = 0;
+            updates++;
+        }
         // Clear RX buffer when disconnected to prevent stale fragments
         if (!link.connected()) {
             rxLen = 0;
@@ -228,6 +235,7 @@ private:
     bool begun = false;
     char lastMac[18] = "";
     int32_t pinValue = BLE_NO_PIN;
+    uint32_t lastLinkChanges = 0;
 
     int position = -1;               // Reported position (0-102), -1 = unknown
     int target = -1;                 // Sent target while moving, -1 = none
@@ -284,23 +292,26 @@ private:
                 memmove(rx, rx + 1, sizeof(rx) - 2);
                 rxLen = sizeof(rx) - 2;
             }
+            if (d[i] == 0) continue;   // A zero byte would end the string search early
             rx[rxLen++] = (char)d[i];
             rx[rxLen] = '\0';
 
             // Scan buffer for line end indicator "\r\n"
             char* lineEnd = strstr(rx, "\r\n");
             if (lineEnd) {
-                char* match = strstr(rx, "P_a=");
-                if (match && match < lineEnd && (lineEnd - match) >= 7) {
-                    if (isdigit((unsigned char)match[4]) &&
-                        isdigit((unsigned char)match[5]) &&
-                        isdigit((unsigned char)match[6])) {
-                        int v = (match[4] - '0') * 100 + (match[5] - '0') * 10 + (match[6] - '0');
-                        if (v <= RV_MAX_POSITION) {
-                            onPosition(v);
-                        } else {
-                            Serial.printf("[%s] Invalid position %d ignored\n", id, v);
-                        }
+                // Use the LAST "P_a=" before the line end: a cut-off fragment in front of
+                // a complete telegram (e.g. "P_a=0P_a=050\r\n") must not hide it
+                char* match = nullptr;
+                for (char* m = strstr(rx, "P_a="); m && m < lineEnd; m = strstr(m + 1, "P_a=")) match = m;
+                if (match && (lineEnd - match) == 7 &&
+                    isdigit((unsigned char)match[4]) &&
+                    isdigit((unsigned char)match[5]) &&
+                    isdigit((unsigned char)match[6])) {
+                    int v = (match[4] - '0') * 100 + (match[5] - '0') * 10 + (match[6] - '0');
+                    if (v <= RV_MAX_POSITION) {
+                        onPosition(v);
+                    } else {
+                        Serial.printf("[%s] Invalid position %d ignored\n", id, v);
                     }
                 }
                 // Shift processed line out of buffer

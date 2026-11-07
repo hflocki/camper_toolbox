@@ -18,3 +18,4 @@ doc/funde.txt
 __pycache__/
 *.pyc
 
+.roo/

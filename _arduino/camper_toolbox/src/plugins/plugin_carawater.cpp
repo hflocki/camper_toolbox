@@ -9,9 +9,10 @@
 #if PLUGIN_CARAWATER
 
 #include "../core/ble_link.h"
+#include "../core/util.h"
 
 // Known GATT layouts: FF00/FF01/FF02 (ISP 15, as in the HA integration),
-// FFF0/FFF1/FFF2 (other Seaflo based pumps), and FFE0/FFE1/FFE1.
+// FFF0/FFF1/FFF2 (other Seaflo based pumps) and FFE0/FFE1 (BLE UART bridge).
 // The plugin starts with the first one and switches to the next one if the service is not found ("Falsches Gerät?").
 struct PumpUuids {
     const char* service;
@@ -22,7 +23,7 @@ struct PumpUuids {
 static const PumpUuids PUMP_LAYOUTS[] = {
     {PUMP_SERVICE_UUID, PUMP_NOTIFY_UUID, PUMP_WRITE_UUID},             // FF00 / FF01 / FF02
     {PUMP_ALT_SERVICE_UUID, PUMP_ALT_NOTIFY_UUID, PUMP_ALT_WRITE_UUID}, // FFF0 / FFF1 / FFF2
-    {"0000ffe0-0000-1000-8000-00805f9b34fb", "0000ffe1-0000-1000-8000-00805f9b34fb", "0000ffe1-0000-1000-8000-00805f9b34fb"} // FFE0 / FFE1
+    {PUMP_ALT2_SERVICE_UUID, PUMP_ALT2_CHAR_UUID, PUMP_ALT2_CHAR_UUID},   // FFE0 / FFE1 (notify + write)
 };
 
 struct PumpCfg {
@@ -76,7 +77,11 @@ public:
     uint8_t bleUse() const override { return BLE_LINK; }
     const char* bleAddress() const override { return c.mac; }
     bool bleCandidate(int32_t company, const char* uuid, const char* name) const override {
-        return strstr(uuid, "ff00") != nullptr || strstr(uuid, "fff0") != nullptr || strstr(uuid, "ffe0") != nullptr;
+        if (strstr(uuid, "ff00") || strstr(uuid, "fff0")) return true;
+        // FFE0 is a generic BLE UART service (roof hatch and fridge use it too):
+        // only list such devices when the name points to a pump
+        return strstr(uuid, "ffe0") && (containsIgnoreCase(name, "ISP") || containsIgnoreCase(name, "cara") ||
+                                         containsIgnoreCase(name, "pump") || containsIgnoreCase(name, "seaflo"));
     }
     const char* manufacturer() const override { return "CaraWater"; }
     const char* model() const override { return c.model[0] ? c.model : "Pumpe"; }
@@ -216,7 +221,9 @@ private:
     bool leakDetection = false;
     bool running = false;
     float voltage = 0, current = 0, temperature = 0, pressure = 0, flow = 0;
-    uint16_t pressureRaw = 0, dailyLiters = 0, totalLiters = 0;
+    uint16_t dailyLiters = 0, totalLiters = 0;
+    bool lastBit10 = false;        // Status bit 0x10, logged to check its meaning
+    uint8_t lastIgnoredType = 0;   // Last non-status frame type that was logged
     unsigned long lastFrame = 0;
     bool lastAvailable = false;
     bool lastRunning = false;
@@ -242,25 +249,38 @@ private:
     // Status frame: AA 93 <status> ... U16LE at 6 voltage, 8 current, 10 pressure raw (psi*10),
     // 12 temperature, 14 flow, 16 daily liters, 18 total liters
     void parseFrame(const uint8_t* d, size_t n) {
-        if (n < 20 || d[0] != 0xAA) return;
+        // Only status frames: with the FFE1 layout notify and write share one characteristic,
+        // other frames (e.g. acknowledgements) must not be taken as status
+        if (n < 20 || d[0] != 0xAA || d[1] != 0x93) {
+            if (n >= 2 && d[0] == 0xAA && d[1] != lastIgnoredType) {   // Log each type once
+                lastIgnoredType = d[1];
+                Serial.printf("[%s] Frame type %02X ignored\n", id, d[1]);
+            }
+            return;
+        }
         uint8_t oldStatus = statusRaw;
         bool hadData = hasData;
 
         applyStatus(d[2]);
-        running = (d[2] & 0x10) != 0;
 
-        // Messwerte (Little Endian)
-        voltage = u16le(d, 6) / 10.0f;     // Spannung
-        current = u16le(d, 8) / 10.0f;     // Strom
-        
-        // Druck von psi*10 in bar umrechnen
-        uint16_t psi_x10 = u16le(d, 10);
-        pressure = (psi_x10 / 10.0f) * 0.0689476f;
+        // Measured values (little endian)
+        voltage = u16le(d, 6) / 10.0f;
+        current = u16le(d, 8) / 10.0f;
+        pressure = u16le(d, 10) / 10.0f * 0.0689476f;   // psi x10 -> bar
+        temperature = u16le(d, 12) / 10.0f;
+        flow = u16le(d, 14) / 10.0f;
+        dailyLiters = u16le(d, 16);
+        totalLiters = u16le(d, 18);
 
-        temperature = u16le(d, 12) / 10.0f; // Temperatur
-        flow = u16le(d, 14) / 10.0f;        // Durchfluss
-        dailyLiters = u16le(d, 16);         // Tagesverbrauch
-        totalLiters = u16le(d, 18);         // Gesamtverbrauch
+        // Running: status bit 0x10 is not confirmed, so the measured values decide
+        // (current or flow). The bit is only logged for checking.
+        running = (current > 0.2f || flow > 0.0f);
+        bool bit10 = (d[2] & 0x10) != 0;
+        if (bit10 != lastBit10 || !hadData) {
+            lastBit10 = bit10;
+            Serial.printf("[%s] Status %02X: bit 0x10 %s, current %.1f A, flow %.1f l/min\n",
+                          id, d[2], bit10 ? "set" : "clear", current, flow);
+        }
 
         lastFrame = millis();
         hasData = true;
