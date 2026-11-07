@@ -9,6 +9,7 @@
 #if PLUGIN_CARAWATER
 
 #include "../core/ble_link.h"
+#include "../core/devlog.h"
 #include "../core/util.h"
 
 // Known GATT layouts: FF00/FF01/FF02 (ISP 15, as in the HA integration),
@@ -111,7 +112,7 @@ public:
             if (!strcmp(link.state(), "Falsches Gerät?")) {
                 layout = (layout + 1) % (sizeof(PUMP_LAYOUTS) / sizeof(PUMP_LAYOUTS[0]));
                 const PumpUuids& u = PUMP_LAYOUTS[layout];
-                Serial.printf("[%s] Trying GATT layout %s\n", id, u.service);
+                devlogf(id, "Trying GATT layout %s", u.service);
                 link.setUuids(u.service, u.notify, u.write);
             }
             updates++;
@@ -199,7 +200,7 @@ public:
             return;
         }
         if (!link.connected()) {
-            Serial.printf("[%s] Command ignored - pump not connected\n", id);
+            devlogf(id, "Command ignored - pump not connected");
             updates++;   // Re-publish the real state so HA switches snap back
             return;
         }
@@ -254,7 +255,7 @@ private:
         if (n < 20 || d[0] != 0xAA || d[1] != 0x93) {
             if (n >= 2 && d[0] == 0xAA && d[1] != lastIgnoredType) {   // Log each type once
                 lastIgnoredType = d[1];
-                Serial.printf("[%s] Frame type %02X ignored\n", id, d[1]);
+                devlogf(id, "Frame type %02X ignored", d[1]);
             }
             return;
         }
@@ -278,8 +279,7 @@ private:
         bool bit10 = (d[2] & 0x10) != 0;
         if (bit10 != lastBit10 || !hadData) {
             lastBit10 = bit10;
-            Serial.printf("[%s] Status %02X: bit 0x10 %s, current %.1f A, flow %.1f l/min\n",
-                          id, d[2], bit10 ? "set" : "clear", current, flow);
+            devlogf(id, "Status %02X: bit 0x10 %s, current %.1f A, flow %.1f l/min", d[2], bit10 ? "set" : "clear", current, flow);
         }
 
         lastFrame = millis();
@@ -304,7 +304,7 @@ private:
         for (int i = 0; i < 59; i++) sum += cmd[i];
         cmd[59] = sum;
         bool ok = link.write(cmd, sizeof(cmd), true);
-        Serial.printf("[%s] Write status 0x%02X: %s\n", id, status, ok ? "OK" : "FAILED");
+        devlogf(id, "Write status 0x%02X: %s", status, ok ? "OK" : "FAILED");
         return ok;
     }
 };

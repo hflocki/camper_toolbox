@@ -44,9 +44,15 @@ Der **Status** in der Web-UI zeigt, wo es hakt:
 
 Gibt es Probleme, zeigt die Live-Ansicht zusätzlich **„Letzter BT-Fehler“** (z. B. „PIN falsch“, „Vom Gerät getrennt“, „Keine Daten erhalten“).
 
-### Fehlersuche per Serial Monitor
+### Fehlersuche: Log herunterladen
 
-Für eine Fehlermeldung bitte den Serial Monitor (115200 Baud) vom Einschalten an mitschneiden, bis das Problem auftritt (beim Kühlschrank mindestens 3 Minuten). Dort steht pro Gerät u. a.:
+Jedes Bluetooth-Gerät (Pumpe, Dachhaube, Kühlschrank) hat im Plugin-Tab unten die Karte **„Log“**:
+
+1. **Log leeren**, damit nur der aktuelle Versuch drinsteht.
+2. Problem abwarten (beim Kühlschrank mindestens 3 Minuten).
+3. **Log herunterladen** – die Datei heißt z. B. `Dachhaube_2026-11-07_14-35.log` und enthält Firmware-Version, aktuelle Werte und alle Meldungen dieses Geräts.
+
+Pro Gerät werden die letzten ca. 8 KB behalten; nach einem Neustart ist das Log leer. Dieselben Meldungen erscheinen auch im Serial Monitor (115200 Baud). Darin steht u. a.:
 
 - `Connecting to … (type …)` / `Reason 0x…: …` – Verbindungsaufbau und Grund jeder Trennung
 - `Security: encrypted …, authenticated …, bonded …` – Ergebnis der Kopplung mit PIN
@@ -54,7 +60,7 @@ Für eine Fehlermeldung bitte den Serial Monitor (115200 Baud) vom Einschalten a
 - `Subscribed …` / `Subscribe … FAILED` – welche Characteristics Daten liefern dürfen
 - `RX … bytes: …` – die ersten 20 empfangenen Pakete jeder Verbindung als Hex und Text
 
-Den Log als Text (nicht als Foto) an den Entwickler schicken. MAC-Adressen dürfen geschwärzt werden.
+Die Log-Datei bzw. den Serial-Log als Text (nicht als Foto) an den Entwickler schicken. MAC-Adressen dürfen geschwärzt werden.
 
 ## 📂 Projektstruktur
 

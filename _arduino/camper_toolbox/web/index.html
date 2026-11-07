@@ -668,6 +668,70 @@
           }),
         );
         $("#main").append(c);
+        if (p.ble == 2) renderLog(p);
+      }
+      // Device log of a BLE device: download as "<name>_<date>_<time>.log", or clear
+      function renderLog(p) {
+        const clean = (s) =>
+          s
+            .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue")
+            .replace(/Ä/g, "Ae").replace(/Ö/g, "Oe").replace(/Ü/g, "Ue").replace(/ß/g, "ss")
+            .replace(/[^A-Za-z0-9_-]+/g, "_")
+            .replace(/^_+|_+$/g, "") || p.id;
+        const two = (n) => String(n).padStart(2, "0");
+        const download = async () => {
+          try {
+            const r = await fetch("/api/log?id=" + encodeURIComponent(p.id));
+            if (!r.ok) throw new Error(r.statusText);
+            const d = new Date();
+            const date = d.getFullYear() + "-" + two(d.getMonth() + 1) + "-" + two(d.getDate());
+            const time = two(d.getHours()) + "-" + two(d.getMinutes());
+            const live = LIVE && LIVE.plugins ? LIVE.plugins.find((x) => x.id == p.id) : null;
+            const text =
+              "# Download " + d.toLocaleString("de-DE") + "\n" +
+              "# Live " + JSON.stringify(live || {}) + "\n" +
+              (await r.text());
+            const a = el("a", {
+              href: URL.createObjectURL(new Blob([text], { type: "text/plain" })),
+              download: clean(p.cfg.name) + "_" + date + "_" + time + ".log",
+            });
+            document.body.append(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+          } catch (e) {
+            toast(e.message);
+          }
+        };
+        const clear = async () => {
+          try {
+            const r = await fetch("/api/log/clear?id=" + encodeURIComponent(p.id), { method: "POST" });
+            if (!r.ok) throw new Error(r.statusText);
+            toast("Log geleert");
+          } catch (e) {
+            toast(e.message);
+          }
+        };
+        $("#main").append(
+          el(
+            "div",
+            { className: "card" },
+            el("h2", {}, "Log"),
+            el(
+              "small",
+              { className: "mute" },
+              "Verbindung, Kopplung, Bluetooth-Dienste und empfangene Daten dieses Geräts. " +
+                "Wird bei einem Neustart gelöscht. Bei Problemen: Log leeren, Fehler abwarten " +
+                "(z. B. 3 Minuten), dann herunterladen und schicken.",
+            ),
+            el(
+              "div",
+              { style: "display:flex;gap:8px;margin-top:10px;flex-wrap:wrap" },
+              el("button", { className: "b", textContent: "Log herunterladen", on: { click: download } }),
+              el("button", { className: "b s", textContent: "Log leeren", on: { click: clear } }),
+            ),
+          ),
+        );
       }
       async function pick(input, wrap) {
         let list = wrap.querySelector(".picker");

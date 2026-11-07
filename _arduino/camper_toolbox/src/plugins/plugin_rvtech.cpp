@@ -10,6 +10,7 @@
 #if PLUGIN_RVTECH
 
 #include "../core/ble_link.h"
+#include "../core/devlog.h"
 #include <NimBLEDevice.h>
 
 #define RV_MAX_POSITION 102
@@ -126,13 +127,13 @@ public:
                     setTarget(sendValue);
                     sendValue = -1;
                 } else if (++sendAttempts >= 2) {
-                    Serial.printf("[%s] Sending %d failed\n", id, sendValue);
+                    devlogf(id, "Sending %d failed", sendValue);
                     sendValue = -1;
                 } else {
                     sendNotBefore = millis() + RV_SEND_RETRY_MS;
                 }
             } else if (millis() - sendQueued > RVTECH_SEND_WAIT_MS) {
-                Serial.printf("[%s] Not connected - command %d dropped\n", id, sendValue);
+                devlogf(id, "Not connected - command %d dropped", sendValue);
                 sendValue = -1;
                 updates++;
             }
@@ -274,7 +275,7 @@ private:
         char buf[12];
         snprintf(buf, sizeof(buf), "P_d=%03d\r\n", v);
         bool ok = link.write(buf, false);
-        Serial.printf("[%s] Send %d: %s\n", id, v, ok ? "OK" : "FAILED");
+        devlogf(id, "Send %d: %s", v, ok ? "OK" : "FAILED");
         return ok;
     }
 
@@ -311,7 +312,7 @@ private:
                     if (v <= RV_MAX_POSITION) {
                         onPosition(v);
                     } else {
-                        Serial.printf("[%s] Invalid position %d ignored\n", id, v);
+                        devlogf(id, "Invalid position %d ignored", v);
                     }
                 }
                 // Shift processed line out of buffer

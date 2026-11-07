@@ -10,6 +10,7 @@
 #if PLUGIN_WCS_FRIDGE
 
 #include "../core/ble_link.h"
+#include "../core/devlog.h"
 #include "../core/util.h"
 
 #define WCS_LINE_MAX    160
@@ -118,7 +119,7 @@ public:
         if (pollCmd[0] && link.canWrite() && (lastPoll == 0 || millis() - lastPoll > (uint32_t)c.poll_s * 1000UL)) {
             lastPoll = millis();
             bool ok = link.write(pollCmd, true);
-            if (!ok) Serial.printf("[%s] Poll command failed\n", id);
+            if (!ok) devlogf(id, "Poll command failed");
         }
 
         bool avail = available();
@@ -268,7 +269,7 @@ private:
     void parseMessage(const char* msg) {
         const char* p = strstr(msg, "/SC0/");
         if (!p) {
-            Serial.printf("[%s] Message: %s\n", id, msg);
+            devlogf(id, "Message: %s", msg);
             return;
         }
         char buf[WCS_LINE_MAX + 1];
@@ -286,7 +287,7 @@ private:
             s = comma + 1;
         }
         if (n < WCS_MIN_TOKENS) {
-            Serial.printf("[%s] Status with %d fields ignored: %s\n", id, n, msg);
+            devlogf(id, "Status with %d fields ignored: %s", n, msg);
             return;
         }
 
@@ -302,8 +303,7 @@ private:
         hasData = true;
         lastMsg = millis();
         messages++;
-        Serial.printf("[%s] Zone 1: %.1f (set %.1f) | Zone 2: %.1f (set %.1f) | %.1f V | %.0f%%\n",
-            id, temp1, set1, temp2, set2, voltage, battery);
+        devlogf(id, "Zone 1: %.1f (set %.1f) | Zone 2: %.1f (set %.1f) | %.1f V | %.0f%%", temp1, set1, temp2, set2, voltage, battery);
     }
 };
 

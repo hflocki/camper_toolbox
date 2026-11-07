@@ -1,4 +1,5 @@
 #include "ble_link.h"
+#include "devlog.h"
 
 #if CT_BLE_LINKS
 
@@ -43,7 +44,7 @@ void BleLink::setTarget(const char* mac_, int32_t pin_) {
     pin = pin_;
     retryDelay = 0;
     lastAttempt = 0;
-    Serial.printf("[%s] Device: %s%s\n", tag, mac[0] ? mac : "(not set)", pin != BLE_NO_PIN ? " (PIN)" : "");
+    devlogf(tag, "Device: %s%s", mac[0] ? mac : "(not set)", pin != BLE_NO_PIN ? " (PIN)" : "");
 }
 
 // Deletes a stored bond for the current device (both address types, the bond store
@@ -52,14 +53,14 @@ void BleLink::forgetBond() {
     if (!mac[0]) return;
     bool a = NimBLEDevice::deleteBond(NimBLEAddress(std::string(mac), BLE_ADDR_PUBLIC));
     bool b = NimBLEDevice::deleteBond(NimBLEAddress(std::string(mac), BLE_ADDR_RANDOM));
-    if (a || b) Serial.printf("[%s] Old bond deleted\n", tag);
+    if (a || b) devlogf(tag, "Old bond deleted");
 }
 
 void BleLink::setState(const char* s) {
     if (strcmp(stateText, s) != 0) {
         strlcpy(stateText, s, sizeof(stateText));
         changes++;
-        Serial.printf("[%s] State: %s\n", tag, s);
+        devlogf(tag, "State: %s", s);
     }
 }
 
@@ -121,11 +122,11 @@ const char* bleReasonText(int reason) {
 
 // Logs every service and characteristic with its properties (diagnosis for unknown devices)
 void BleLink::dumpGatt() {
-    Serial.printf("[%s] GATT table:\n", tag);
+    devlogf(tag, "GATT table:");
     for (NimBLERemoteService* s : client->getServices(false)) {
-        Serial.printf("[%s]   service %s\n", tag, s->getUUID().toString().c_str());
+        devlogf(tag, "  service %s", s->getUUID().toString().c_str());
         for (NimBLERemoteCharacteristic* c : s->getCharacteristics(false)) {
-            Serial.printf("[%s]     char %s  %s%s%s%s%s\n", tag, c->getUUID().toString().c_str(),
+            devlogf(tag, "    char %s  %s%s%s%s%s", c->getUUID().toString().c_str(),
                 c->canRead() ? "read " : "", c->canWrite() ? "write " : "",
                 c->canWriteNoResponse() ? "write-nr " : "", c->canNotify() ? "notify " : "",
                 c->canIndicate() ? "indicate " : "");
@@ -136,7 +137,7 @@ void BleLink::dumpGatt() {
 void BleLink::onPassKeyEntry(NimBLEConnInfo& info) {
     if (pin == BLE_NO_PIN) {
         // The device asks for a PIN although none is configured
-        Serial.printf("[%s] Device requests a PIN - enter it in the web UI\n", tag);
+        devlogf(tag, "Device requests a PIN - enter it in the web UI");
         NimBLEDevice::injectPassKey(info, 0);
         return;
     }
@@ -197,7 +198,7 @@ bool BleLink::startConnect() {
 
     bleScanPause();
     setState("Verbinde...");
-    Serial.printf("[%s] Connecting to %s (type %u%s)\n", tag, mac, type, knownType ? "" : ", guessed");
+    devlogf(tag, "Connecting to %s (type %u%s)", mac, type, knownType ? "" : ", guessed");
 
     connectResult = 0;
     if (!client->connect(NimBLEAddress(std::string(mac), type), true, true, true)) {
@@ -217,11 +218,11 @@ bool BleLink::subscribeChr(NimBLERemoteCharacteristic* c) {
     });
     if (ok) {
         subscribed++;
-        Serial.printf("[%s] Subscribed %s\n", tag, c->getUUID().toString().c_str());
+        devlogf(tag, "Subscribed %s", c->getUUID().toString().c_str());
     } else {
         // Typical cause: the characteristic needs an encrypted link (PIN / pairing)
         subscribeFailed++;
-        Serial.printf("[%s] Subscribe %s FAILED (PIN / pairing needed?)\n", tag, c->getUUID().toString().c_str());
+        devlogf(tag, "Subscribe %s FAILED (PIN / pairing needed?)", c->getUUID().toString().c_str());
     }
     return ok;
 }
@@ -247,18 +248,17 @@ bool BleLink::finishConnect() {
             int e = client->getLastError();
             lastReason = (e >= 0x100) ? e : BLE_REASON_PAIRING;
             changes++;
-            Serial.printf("[%s] Pairing failed (0x%03X: %s) - wrong PIN, or the device is still bonded to a phone?\n",
-                tag, e, bleReasonText(lastReason));
+            devlogf(tag, "Pairing failed (0x%03X: %s) - wrong PIN, or the device is still bonded to a phone?", e, bleReasonText(lastReason));
             setState("Kopplung fehlgeschlagen");
             disconnect();
             forgetBond();   // Do not keep a half-made bond for the next attempt
             return false;
         }
-        Serial.printf("[%s] Paired / encrypted\n", tag);
+        devlogf(tag, "Paired / encrypted");
     }
     if (authDone) {
         authDone = false;
-        Serial.printf("[%s] Security: encrypted %s, authenticated %s, bonded %s\n", tag,
+        devlogf(tag, "Security: encrypted %s, authenticated %s, bonded %s",
             authEncrypted ? "yes" : "no", authAuthenticated ? "yes" : "no", authBonded ? "yes" : "no");
     }
 
@@ -279,7 +279,7 @@ bool BleLink::finishConnect() {
     }
     if (subscribed == 0 && subscribeFailed > 0) {
         // Characteristics exist, but the device refuses the subscription without pairing
-        Serial.printf("[%s] Subscriptions refused - device needs a PIN (or a different one)\n", tag);
+        devlogf(tag, "Subscriptions refused - device needs a PIN (or a different one)");
         lastReason = BLE_REASON_NEED_PIN;
         changes++;
         setState("PIN nötig?");
@@ -287,7 +287,7 @@ bool BleLink::finishConnect() {
         return false;
     }
     if (subscribed == 0 || (writeUuid[0] && !writeChr)) {
-        Serial.printf("[%s] Service / characteristics not found - wrong device?\n", tag);
+        devlogf(tag, "Service / characteristics not found - wrong device?");
         lastReason = BLE_REASON_NO_SERVICE;
         changes++;
         setState("Falsches Gerät?");
@@ -303,7 +303,7 @@ bool BleLink::finishConnect() {
     mtuValue = client->getMTU();
     lastRssiValue = client->getRssi();
     changes++;
-    Serial.printf("[%s] Connected, MTU %u, %u subscription(s)\n", tag, (unsigned)mtuValue, subscribed);
+    devlogf(tag, "Connected, MTU %u, %u subscription(s)", (unsigned)mtuValue, subscribed);
     return true;
 }
 
@@ -325,11 +325,11 @@ void BleLink::loop() {
         bool own = lastReason > 0 && lastReason < 0x100;
         if (!(r == 0x216 && (own || lastReason >= 0x400))) lastReason = r;
         changes++;
-        Serial.printf("[%s] Reason 0x%03X: %s\n", tag, r, bleReasonText(r));
+        devlogf(tag, "Reason 0x%03X: %s", r, bleReasonText(r));
     }
     if (linkLost) {
         linkLost = false;
-        if (linkUp) Serial.printf("[%s] Disconnected\n", tag);
+        if (linkUp) devlogf(tag, "Disconnected");
         markDisconnected();
         retryDelay = RECONNECT_DELAY_MS;
         lastAttempt = millis();
@@ -367,7 +367,7 @@ void BleLink::loop() {
     } else {
         setState("Verbunden");
         if (silenceMs && millis() - lastRx > silenceMs) {
-            Serial.printf("[%s] Nothing received for %lu s - reconnecting (poll command needed?)\n", tag, silenceMs / 1000);
+            devlogf(tag, "Nothing received for %lu s - reconnecting (poll command needed?)", silenceMs / 1000);
             lastReason = BLE_REASON_SILENT;
             changes++;
             disconnect();
@@ -394,11 +394,16 @@ bool BleLink::receive(BlePacket& p) {
     // Diagnosis: the first packets of every connection as hex and text
     if (rxLogged < 20) {
         rxLogged++;
-        Serial.printf("[%s] RX %u bytes:", tag, (unsigned)p.len);
-        for (uint16_t i = 0; i < p.len; i++) Serial.printf(" %02X", p.data[i]);
-        Serial.print("  |");
-        for (uint16_t i = 0; i < p.len; i++) Serial.print(isprint(p.data[i]) ? (char)p.data[i] : '.');
-        Serial.println("|");
+        char hex[BLE_PACKET_MAX * 3 + 1];
+        char txt[BLE_PACKET_MAX + 1];
+        size_t h = 0;
+        for (uint16_t i = 0; i < p.len; i++) {
+            h += snprintf(hex + h, sizeof(hex) - h, " %02X", p.data[i]);
+            txt[i] = isprint(p.data[i]) ? (char)p.data[i] : '.';
+        }
+        hex[h] = '\0';
+        txt[p.len] = '\0';
+        devlogf(tag, "RX %u bytes:%s  |%s|", (unsigned)p.len, hex, txt);
     }
     return true;
 }
@@ -410,11 +415,11 @@ void BleLink::setReleased(bool r) {
     if (r) {
         releasedAt = millis();
         disconnect();
-        Serial.printf("[%s] Bluetooth released for the app\n", tag);
+        devlogf(tag, "Bluetooth released for the app");
     } else {
         retryDelay = 0;
         lastAttempt = 0;
-        Serial.printf("[%s] Bluetooth taken back\n", tag);
+        devlogf(tag, "Bluetooth taken back");
     }
 }
 

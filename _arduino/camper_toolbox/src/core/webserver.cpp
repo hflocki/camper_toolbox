@@ -4,6 +4,7 @@
 #include "settings.h"
 #include "registry.h"
 #include "ble.h"
+#include "devlog.h"
 
 #include <WiFi.h>
 #include <ESPAsyncWebServer.h>
@@ -329,6 +330,44 @@ void webserverInit() {
         if (!auth(request)) return;
         request->send(200, "application/json", "{\"status\":\"restarting\"}");
         factoryRequested = true;
+    });
+
+    // Device log as a text file (plugin tab, "Log herunterladen"). The web UI sets the
+    // file name (device name + date) and puts the live values in front.
+    server.on("/api/log", HTTP_GET, [](AsyncWebServerRequest* request) {
+        if (!auth(request)) return;
+        if (!request->hasParam("id")) {
+            sendError(request, 400, "id fehlt");
+            return;
+        }
+        Plugin* p = pluginById(request->getParam("id")->value().c_str());
+        if (!p) {
+            sendError(request, 404, "Unbekanntes Plugin");
+            return;
+        }
+        unsigned long up = millis() / 1000;
+        char head[256];
+        snprintf(head, sizeof(head),
+                 "# %s (%s, ID %s)\n# Firmware %s, uptime %lu:%02lu:%02lu, free heap %u bytes\n"
+                 "# Time stamps below: uptime h:mm:ss.mmm\n\n",
+                 p->name, p->typeName, p->id, FW_VERSION, up / 3600, (up / 60) % 60, up % 60,
+                 (unsigned)ESP.getFreeHeap());
+        String out;
+        out.reserve(DEVLOG_SIZE + sizeof(head));
+        out += head;
+        if (!devlogGet(p->id, out)) out += "(keine Einträge seit dem letzten Neustart)\n";
+        AsyncWebServerResponse* r = request->beginResponse(200, "text/plain; charset=utf-8", out);
+        r->addHeader("Cache-Control", "no-store");
+        request->send(r);
+    });
+    server.on("/api/log/clear", HTTP_POST, [](AsyncWebServerRequest* request) {
+        if (!auth(request)) return;
+        if (!request->hasParam("id")) {
+            sendError(request, 400, "id fehlt");
+            return;
+        }
+        devlogClear(request->getParam("id")->value().c_str());
+        request->send(200, "application/json", "{\"ok\":true}");
     });
 
     // Nearby BLE devices (for picking device addresses in the web UI)

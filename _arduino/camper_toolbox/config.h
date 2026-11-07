@@ -68,7 +68,7 @@
 // ============================================================
 // Release builds (GitHub Actions) set the version from the git tag
 #ifndef FW_VERSION
-#define FW_VERSION            "0.1.6"
+#define FW_VERSION            "0.1.7"
 #endif
 
 // Network upload from the Arduino IDE. Release builds switch it off: their OTA password
